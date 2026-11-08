@@ -1,0 +1,51 @@
+name: BrewLite CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify BrewLite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      DIRECT_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      TEST_DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      NEXT_TELEMETRY_DISABLED: "1"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: brewlite
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: brewlite_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U brewlite -d brewlite_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+      - run: npm run setup
+      - run: npm run check
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run test:integration
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:e2e

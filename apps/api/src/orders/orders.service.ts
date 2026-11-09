@@ -465,11 +465,19 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       });
       if (!order) throw new NotFoundException('Không tìm thấy đơn hàng.');
       if (order.status === 'cancelled') return this.summary(order);
-      // A gateway may still be processing money. Never release stock based on a browser cancel.
-      if (order.payments.some((p) => p.status === 'pending'))
-        throw new ConflictException(
-          'Giao dịch đang chờ VNPay xác nhận. Chưa thể hủy đơn.',
-        );
+      // The customer explicitly cancelled. Mark unfinished gateway sessions as
+      // failed before releasing stock; a late IPN must be handled as a refund.
+      const pendingPayments = order.payments.filter(
+        (p) => p.status === 'pending',
+      );
+      if (pendingPayments.length > 0)
+        await tx.payments.updateMany({
+          where: {
+            payment_id: { in: pendingPayments.map((p) => p.payment_id) },
+            status: 'pending',
+          },
+          data: { status: 'failed', response_code: '24' },
+        });
       if (order.status === 'paid') {
         const charged = order.payments.find((p) => p.status === 'success');
         if (!charged || !['mock', 'free', 'demo'].includes(charged.provider))

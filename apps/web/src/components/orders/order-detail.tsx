@@ -68,6 +68,14 @@ export default function OrderDetail({ id }: { id: string }) {
   }, [id, reload, router]);
   async function action(kind: "cancel" | "retry" | "reconcile") {
     if (!order || busy) return;
+    if (
+      kind === "cancel" &&
+      order.payment?.status === "pending" &&
+      !window.confirm(
+        "Giao dịch VNPay đang chờ xác nhận. Nếu bạn đã thanh toán, đừng hủy. Tiếp tục hủy đơn?",
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     try {
@@ -300,7 +308,7 @@ export default function OrderDetail({ id }: { id: string }) {
                 </button>
                 <button
                   className="coffee-button"
-                  disabled={busy || order.payment?.status === "pending"}
+                  disabled={busy}
                   onClick={() => void action("cancel")}
                 >
                   Hủy đơn chưa trả tiền

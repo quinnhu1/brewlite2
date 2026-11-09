@@ -28,7 +28,7 @@ VNPAY_RETURN_URL=https://your-api.ngrok-free.app/payments/vnpay/return
 
 Giữ `NEXT_PUBLIC_API_URL=http://localhost:3001` trong `apps/web/.env.local`, hoặc đặt ở `.env` gốc nếu chạy Compose. Thực hiện checkout từ `http://localhost:3000` trên máy chạy BrewLite để trình duyệt quay về đúng nơi đã đăng nhập.
 
-Đăng ký IPN `https://your-api.ngrok-free.app/payments/vnpay/ipn` với VNPay cho đúng merchant. ReturnUrl đưa trình duyệt về trang kết quả. IPN gọi vào NestJS để cập nhật giao dịch. NestJS cũng có thể chủ động đối soát bằng QueryDR đã xác minh chữ ký. [Tích hợp PAY 2.1.0](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html)
+Đăng ký IPN `https://your-api.ngrok-free.app/payments/vnpay/ipn` với VNPay cho đúng merchant. ReturnUrl đưa trình duyệt về trang kết quả và cũng áp dụng kết quả đã ký khi IPN chưa tới; IPN vẫn là nguồn xác nhận chính. NestJS cũng có thể chủ động đối soát bằng QueryDR đã xác minh chữ ký. [Tích hợp PAY 2.1.0](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html)
 
 Khởi động lại backend sau khi sửa biến. Tạo giao dịch mới khi thử cấu hình mới. Phiên đang chờ dùng URL đã ký tại lúc tạo nên cần kiểm tra trạng thái phiên đó trước khi thử một đơn mới.
 

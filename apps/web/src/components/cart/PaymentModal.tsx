@@ -233,12 +233,22 @@ export default function PaymentModal({
 
   async function cancelSaved() {
     if (!ownCheckout || busy) return;
+    if (
+      ownCheckout.paymentBody &&
+      !window.confirm(
+        "Giao dịch VNPay đang chờ xác nhận. Nếu bạn đã thanh toán, đừng hủy. Tiếp tục hủy?",
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     try {
-      // The original create response may have been lost. Replay its key to resolve it first.
-      const order = await ordersApi.create(ownCheckout.body, ownCheckout.key);
-      await ordersApi.cancel(order.order_id);
+      // Cancel the known order directly. Only replay the create key when the
+      // original create response was lost and no order id was persisted.
+      const orderId =
+        ownCheckout.orderId ??
+        (await ordersApi.create(ownCheckout.body, ownCheckout.key)).order_id;
+      await ordersApi.cancel(orderId);
       useCartStore.getState().setCheckout(null);
       setQuote(null);
       setBody(null);

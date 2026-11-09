@@ -53,20 +53,26 @@ export class PaymentsController {
   }
 
   @Get('vnpay/return')
-  returnUrl(@Query() query: Record<string, unknown>, @Res() res: Response) {
+  async returnUrl(
+    @Query() query: Record<string, unknown>,
+    @Res() res: Response,
+  ) {
     const target = new URL(
       '/payment/result',
       process.env.FRONTEND_URL ?? 'http://localhost:3000',
     );
     const params = extractParams(query);
     try {
-      if (params && verify(params))
+      if (params && verify(params)) {
         target.searchParams.set('reference', params.vnp_TxnRef ?? '');
-      else target.searchParams.set('error', 'signature');
+        // The browser return carries the same signed result as IPN. Apply it as
+        // a fallback so a successful payment is not left pending when the
+        // merchant portal's IPN callback is missing or delayed.
+        await this.payments.ipn(query);
+      } else target.searchParams.set('error', 'signature');
     } catch {
       target.searchParams.set('error', 'configuration');
     }
-    // ReturnUrl only verifies and displays. IPN or signed QueryDR updates the DB.
     return res.redirect(303, target.toString());
   }
   @Get('reference/:ref')

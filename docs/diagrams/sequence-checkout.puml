@@ -1,0 +1,125 @@
+@startuml sequence-checkout
+title Sequence Diagram: Luồng Đặt hàng, Giữ tồn kho, Thanh toán, Đối soát & Thử lại (UC-01 / F01, F04, F05)
+
+skinparam backgroundColor #FFFFFF
+skinparam roundCorner 4
+skinparam Shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 12
+
+actor "Customer\n(Khách hàng)" as Customer
+participant "Next.js UI\n(useCartStore /\nPaymentModal /\nOrderDetail)" as UI
+participant "NestJS API\n(OrdersService /\nPaymentsService)" as API
+database "PostgreSQL 16\n(Prisma Transaction)" as DB
+participant "Payment Service\n(Mock Ví/Thẻ /\nVNPay Sandbox)" as Gateway
+
+== 1. Kiểm tra Giỏ hàng & Báo giá từ Server (Server-side Quote - FR-04, BR-01) ==
+Customer -> UI : Mở Giỏ hàng / Nhấn "Thanh toán"\n(Chọn món, Size S/M/L, Topping, Mã giảm giá)
+activate UI
+UI -> API : POST /orders/quote\n{ items: [{ product_id, size, quantity, topping_ids }], promo_code }
+activate API
+API -> DB : SELECT base_price, stock, version, add_price, topping_price, promotions
+activate DB
+DB --> API : Dữ liệu gốc từ Database
+deactivate DB
+API --> UI : 200 OK { subtotal, discount, total, items_pricing }
+deactivate API
+UI --> Customer : Hiển thị tổng tiền chuẩn từ Server\n(Khởi tạo hoặc giữ nguyên checkoutKey theo giỏ hiện tại)
+
+== 2. Tạo Đơn hàng & Giữ tồn kho bằng Optimistic Locking (FR-04, BR-02, BR-03) ==
+Customer -> UI : Nhấn "Xác nhận đặt hàng & Thanh toán"
+UI -> API : POST /orders\nHeaders: Authorization (Bearer JWT), Idempotency-Key: <checkoutKey>\nBody: { pickup_method, items, promo_code }
+activate API
+
+alt [E1: Chưa đăng nhập hoặc JWT hết hạn (FR-03)]
+  API --> UI : 401 Unauthorized
+  UI --> Customer : Giữ nguyên giỏ hàng (theo userId) & Chuyển hướng Đăng nhập
+else [E2: Request chứa trường giá lạ (cost / price / total) hoặc sai quantity (INT-PRICE-01, INT-QTY-01)]
+  API -> API : ValidationPipe (whitelist=true, forbidNonWhitelisted=true)\nKiểm tra quantity nguyên trong [1..50]
+  API --> UI : 400 Bad Request (Từ chối trường lạ, không tạo đơn)
+  UI --> Customer : Báo lỗi dữ liệu không hợp lệ
+else [E3: Trùng Idempotency-Key (checkoutKey) đã gửi trước đó (INT-IDEM-01, INT-IDEM-02)]
+  API -> DB : Kiểm tra idempotency record (checkoutKey, user_id, request_hash)
+  alt [Cùng user_id và khớp request_hash (Do reload / mất mạng)]
+    DB --> API : Trả về Order đã tạo trước đó
+    API --> UI : 200 OK (Trả lại cùng order_id, không trừ kho lần 2)
+  else [Khác request_hash hoặc khác user_id]
+    API --> UI : 409 Conflict (IDEMPOTENCY_CONFLICT)
+    UI --> Customer : Sinh checkoutKey mới khi giỏ hàng đã thay đổi
+  end
+else [Request tạo đơn mới hợp lệ]
+  API -> DB : BEGIN TRANSACTION
+  activate DB
+  API -> DB : Cộng dồn số lượng theo product_id (gộp mọi Size)\nSELECT stock, version FROM products WHERE product_id IN (...)
+  API -> DB : UPDATE products SET stock = stock - qty, version = version + 1\nWHERE product_id = :id AND stock >= :qty AND version = :ver
+
+  alt [E4: Thiếu tồn kho hoặc xung đột version khi 2 khách tranh mua (INT-STOCK-01, INT-STOCK-02)]
+    DB --> API : 0 rows updated (Hết hàng hoặc version đã thay đổi)
+    API -> DB : ROLLBACK TRANSACTION
+    API --> UI : 409 Conflict / 400 Bad Request { code: "STOCK_CHANGED" / "OUT_OF_STOCK" }
+    UI -> API : GET /products (Tải lại danh mục tồn kho mới nhất)
+    UI --> Customer : Giữ nguyên giỏ hàng, chỉ rõ món/số lượng cần chỉnh\n(Không tự động thanh toán khi tổng tiền thay đổi)
+  else [Đủ tồn kho & khớp version]
+    API -> DB : INSERT INTO orders (status = PENDING, subtotal, discount, total)\nINSERT INTO order_items & order_item_toppings (snapshot giá)
+    API -> DB : COMMIT TRANSACTION
+    DB --> API : Order (order_id, status = PENDING, total)
+    deactivate DB
+    API --> UI : 201 Created { order_id, status: "PENDING", total,\nactions: { can_retry_payment: true, can_change_method: true, can_cancel: true } }
+  end
+end
+deactivate API
+
+== 3. Thực hiện Thanh toán Không tiền mặt & Xử lý Kết quả / Đối soát (FR-05, FR-12, F01, F04, F05) ==
+UI -> UI : Lưu activeOrderId, sinh <paymentKey> và <paymentBody> cho lần thử hiện tại
+UI -> API : POST /payments\nHeaders: Authorization (JWT), Idempotency-Key: <paymentKey>\nBody: { order_id, provider: "mock"|"vnpay", method: "E_WALLET"|"CARD", simulate_result? }
+activate API
+API -> DB : Kiểm tra khóa đơn & kiểm tra payment đang PENDING của order_id
+activate DB
+
+alt [Trường hợp 1: Đã có giao dịch khác đang PENDING trên cùng đơn (F01)]
+  DB --> API : Đang tồn tại Payment (status = PENDING)
+  API --> UI : 409 Conflict { code: "PAYMENT_PENDING", can_change_method: false }
+  UI --> Customer : Khóa đổi kênh tạm thời, hiển thị "Đang chờ đối soát giao dịch"\nkèm nút "Kiểm tra trạng thái"
+else [Trường hợp 2: Tạo lượt thanh toán mới (hoặc trả lại cùng kết quả nếu trùng paymentKey)]
+  API -> DB : INSERT INTO payments (payment_id, order_id, idempotency_key, status = PENDING, amount = order.total)
+  deactivate DB
+
+  alt [Nhánh A: Thanh toán Thành công (Mock SUCCESS hoặc VNPay IPN/QueryDR trả 00)]
+    API -> Gateway : Xử lý thanh toán / Xác minh chữ ký IPN (vnp_SecureHash, amount)
+    activate Gateway
+    Gateway --> API : Giao dịch thành công (SUCCESS / ResponseCode = "00")
+    deactivate Gateway
+    API -> DB : BEGIN TRANSACTION (Khóa Order chống callback lặp - INT-IPN-01)\nUPDATE payments SET status = SUCCESS/PAID, paid_at = NOW()\nUPDATE orders SET status = PAID\nUPDATE users SET point = point + earned\nINSERT INTO loyalty_transactions (type = EARN)\nCOMMIT
+    API --> UI : 200 OK { order_status: "PAID", payment_status: "PAID",\nactions: { can_retry_payment: false, can_change_method: false, can_cancel: true } }
+    UI -> UI : syncCheckoutWithOrder(order):\n- Xóa các món đã chọn mua (removeSelectedItems)\n- Giữ lại các món chưa chọn trong giỏ\n- Xóa checkoutKey, paymentKey, paymentBody
+    UI --> Customer : Hiển thị xác nhận đơn thành công (order_code, điểm cộng)
+
+  else [Nhánh B: Thanh toán Thất bại đã xác nhận cuối cùng (Mock FAILED / VNPay FAILED - F04, F05)]
+    API -> Gateway : Xử lý thanh toán / Nhận kết quả thất bại cuối cùng
+    activate Gateway
+    Gateway --> API : Giao dịch thất bại (FAILED / Khách hủy tại cổng)
+    deactivate Gateway
+    API -> DB : UPDATE payments SET status = FAILED\nUPDATE orders SET status = PAYMENT_FAILED\n(Giữ nguyên reservation tồn kho trong thời hạn đơn)
+    API --> UI : 200 OK { order_status: "PAYMENT_FAILED", payment_status: "FAILED",\nactions: { can_retry_payment: true, can_change_method: true, can_cancel: true } }
+    UI -> UI : syncCheckoutWithOrder(order) [Dùng chung tại PaymentModal, Result & OrderDetail]:\n- Giữ nguyên giỏ hàng và giữ nguyên order_id\n- XÓA paymentBody cũ & SINH paymentKey mới\n- Mở khóa chọn phương thức (can_change_method = true)
+    UI --> Customer : Thông báo lỗi thanh toán, cho phép ĐỔI KÊNH (Ví <-> Thẻ)\nhoặc bấm "Thử thanh toán lại" trên cùng đơn hàng
+
+  else [Nhánh C: Giao dịch VNPay treo / Mất mạng / Chưa rõ kết quả (F01, F03)]
+    API -> Gateway : Chuyển hướng VNPay / Chưa nhận được IPN
+    UI --> Customer : Hiển thị trạng thái "Đang chờ xác nhận từ cổng thanh toán"\n(Giữ nguyên paymentKey cũ, KHÔNG tự ý báo thành công hay hoàn tiền)
+    Customer -> UI : Nhấn "Kiểm tra trạng thái" (hoặc Worker định kỳ chạy)
+    UI -> API : POST /payments/:id/reconcile
+    API -> Gateway : Gọi QueryDR ngoài DB Transaction (tuân thủ cooldown next_check_at)
+    activate Gateway
+    Gateway --> API : Trả kết quả đối soát (Thành công / Thất bại cuối / Đang xử lý)
+    deactivate Gateway
+    API -> DB : Khóa Order trong Transaction ngắn & Cập nhật nếu có kết quả cuối
+    API --> UI : Trả về Order + Payment + Actions mới nhất
+    UI -> UI : Gọi syncCheckoutWithOrder(order) để mở khóa đổi kênh (nếu FAILED)\nhoặc hoàn tất đơn (nếu PAID)
+  end
+end
+deactivate API
+deactivate UI
+@enduml

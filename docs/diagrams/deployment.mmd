@@ -1,0 +1,32 @@
+%% BrewLite deployment — ADR-003 (VPS Ubuntu + Docker Compose + Caddy)
+%% Nguồn chỉnh sửa. Bản kết xuất: Deployment_Diagram.svg
+%% Render bằng mmdc -i deployment.mmd -o Deployment_Diagram.svg
+flowchart TB
+  user["Trình duyệt<br/>https://domain"]
+
+  subgraph gh["GitHub"]
+    direction TB
+    trigger["Pull request / push main"]
+    verify["Actions · verify<br/>lint · build · unit · e2e<br/>validate cấu hình deploy"]
+    images["Actions · images<br/>build 2 image"]
+    ghcr[("GHCR<br/>brewlite2-api:&lt;sha&gt;<br/>brewlite2-web:&lt;sha&gt;")]
+    deploy["Actions · deploy<br/>SSH + smoke test"]
+    trigger --> verify --> images --> ghcr
+    images --> deploy
+  end
+
+  subgraph vps["VPS Ubuntu 24.04 · docker-compose.prod.yml"]
+    direction TB
+    caddy["Caddy<br/>:80 :443 · TLS tự động"]
+    web["web · Next.js<br/>:3000"]
+    api["api · NestJS<br/>:3001 · GET /health"]
+    db[("db · PostgreSQL 16<br/>volume pgdata")]
+    files["/opt/brewlite<br/>.env · backups/ · .last-good-tag"]
+    caddy -->|"/api/*"| api
+    caddy -->|"/*"| web
+    api --> db
+  end
+
+  user -->|"HTTPS"| caddy
+  ghcr -.->|"docker pull"| vps
+  deploy -.->|"release.sh &lt;sha&gt;<br/>pull → backup → migrate → up → health"| vps

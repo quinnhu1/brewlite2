@@ -23,6 +23,12 @@ describe('AppController (e2e)', () => {
       .expect('BrewLite Hello');
   });
 
+  it('/health (GET) answers the deploy probes', async () => {
+    const response = await request(app.getHttpServer()).get('/health').expect(200);
+    expect(response.body).toMatchObject({ status: 'ok' });
+    expect(typeof response.body.uptime).toBe('number');
+  });
+
   afterEach(async () => {
     await app.close();
   });

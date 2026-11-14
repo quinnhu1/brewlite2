@@ -25,6 +25,12 @@ cd "$DEPLOY_DIR" || die "cannot enter $DEPLOY_DIR"
 command -v docker >/dev/null || die "docker is not installed"
 docker compose version >/dev/null || die "docker compose plugin is missing"
 command -v curl >/dev/null || die "curl is required for health checks"
+command -v flock >/dev/null || die "flock (util-linux) is required for the deploy lock"
+
+# Serialise releases so two workflow runs cannot migrate or restart the stack
+# at the same time.
+exec 9>"$DEPLOY_DIR/.release.lock"
+flock -n 9 || die "another release is already running in $DEPLOY_DIR"
 
 set -a
 # shellcheck source=/dev/null
@@ -79,9 +85,22 @@ wait_healthy() {
   return 1
 }
 
+has_catalog() {
+  # shellcheck disable=SC2086
+  curl -fsS $CURL_OPTS --max-time 10 "https://${PUBLIC_DOMAIN}/api/products" |
+    grep -q '"productId"'
+}
+
 # The public URLs exercise Caddy and TLS as well, not just the containers.
 if wait_healthy "api" "https://${PUBLIC_DOMAIN}/api/health" &&
   wait_healthy "web" "https://${PUBLIC_DOMAIN}/"; then
+  if has_catalog; then
+    log "catalog is served"
+  elif [[ "${REQUIRE_CATALOG:-false}" == "true" ]]; then
+    die "catalog is empty; seed the database before releasing (REQUIRE_CATALOG=true)"
+  else
+    log "warning: catalog is empty; run the seed before the demo"
+  fi
   printf '%s\n' "$TAG" >.last-good-tag
   log "released $TAG"
   exit 0

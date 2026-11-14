@@ -1,6 +1,6 @@
 # Local development database only.
 #
-#   npm run db:up      # docker compose -f docker-compose.dev.yml up -d
+#   npm run db:up      # docker compose up -d db
 #   npm run db:down
 #
 # The API connects with:

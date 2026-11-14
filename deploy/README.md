@@ -46,17 +46,41 @@ chmod 600 .env
 
 `deploy/release.sh <sha>`:
 
+0. Lấy lock `flock` trong `/opt/brewlite/.release.lock` — hai workflow chạy
+   đồng thời sẽ bị chặn, không migrate/restart chồng nhau.
 1. `compose pull api web caddy` — image pin theo đúng commit, không dùng `latest`.
 2. `deploy/backup.sh` — `pg_dump` vào `/opt/brewlite/backups`, giữ 7 ngày.
 3. `compose run --rm --no-deps api npx prisma migrate deploy` — migration là
    bước riêng, fail thì dừng trước khi chạy version mới.
 4. `compose up -d --remove-orphans`.
 5. Health check công khai `https://<domain>/api/health` và `https://<domain>/`.
-6. Ghi `.last-good-tag`; nếu health fail thì quay lại tag trước đó và job fail.
-7. CI chạy `npm run test:smoke -- "$PRODUCTION_URL" "$PRODUCTION_URL/api"`.
+6. Kiểm tra `/api/products` có catalog (cảnh báo, hoặc fail nếu
+   `REQUIRE_CATALOG=true`).
+7. Ghi `.last-good-tag`; nếu health fail thì quay lại tag trước đó và job fail.
+8. CI chạy `npm run test:smoke -- "$PRODUCTION_URL" "$PRODUCTION_URL/api"`.
 
 Lưu ý rollback chỉ đổi image, **không** revert migration đã áp dụng — kiểm tra
 tương thích schema trước khi rollback.
+
+**Lần deploy đầu** (DB trống, chưa có catalog):
+
+```bash
+cd /opt/brewlite
+# 1. Release sẽ tự migrate; sau khi xong, nạp catalog + tạo admin riêng:
+docker compose -f docker-compose.prod.yml run --rm --no-deps api npx prisma db seed
+# 2. Tạo tài khoản admin với mật khẩu riêng (không dùng tài khoản demo).
+# 3. Các lần sau có thể đặt REQUIRE_CATALOG=true trong .env để chặn release
+#    khi catalog rỗng.
+```
+
+Xem log và trạng thái:
+
+```bash
+cd /opt/brewlite
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f --tail 100 api web caddy
+cat .last-good-tag
+```
 
 ## 4. Caddy
 

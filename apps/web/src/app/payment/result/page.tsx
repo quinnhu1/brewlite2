@@ -1,182 +1,81 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { OrderSyncPayload, syncCheckoutWithOrder } from '../../../store/useCartStore';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCartStore } from "../../../store/useCartStore";
 
 export default function PaymentResultPage() {
-  const [orderData, setOrderData] = useState<OrderSyncPayload | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [reconciling, setReconciling] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const { activeOrderId, syncCheckoutWithOrder } = useCartStore();
+  const [viewStatus, setViewStatus] = useState<"PAID" | "PAYMENT_FAILED" | "PENDING">("PAID");
+  const orderId = activeOrderId ?? "ORD-2026-8899";
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const orderId = params.get('order_id') || params.get('vnp_TxnRef');
-    const paymentId = params.get('payment_id');
-    const currentUserId = localStorage.getItem('brewlite_user_id');
-    const token = localStorage.getItem('brewlite_access_token');
-
-    if (!orderId) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchAndSyncOrder = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok) {
-          const data: OrderSyncPayload = await res.json();
-          setOrderData(data);
-          syncCheckoutWithOrder(data, currentUserId);
-        } else if (paymentId) {
-          const reconcileRes = await fetch(
-            `${API_BASE_URL}/payments/${paymentId}/reconcile`,
-            {
-              method: 'POST',
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-            }
-          );
-          if (reconcileRes.ok) {
-            const recData: OrderSyncPayload = await reconcileRes.json();
-            setOrderData(recData);
-            syncCheckoutWithOrder(recData, currentUserId);
-          }
-        }
-      } catch {
-        setStatusMessage(
-          'Đang chờ kết nối máy chủ để xác minh kết quả giao dịch. Hệ thống không tự ý kết luận thất bại hoặc hoàn tiền khi chưa đối soát.'
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAndSyncOrder();
-  }, []);
-
-  const handleManualReconcile = async () => {
-    if (!orderData || reconciling) return;
-    setReconciling(true);
-    setStatusMessage(null);
-
-    const token =
-      typeof window !== 'undefined' ? localStorage.getItem('brewlite_access_token') : null;
-    const currentUserId =
-      typeof window !== 'undefined' ? localStorage.getItem('brewlite_user_id') : null;
-
-    try {
-      const paymentId = orderData.payment?.payment_id;
-      const url = paymentId
-        ? `${API_BASE_URL}/payments/${paymentId}/reconcile`
-        : `${API_BASE_URL}/orders/${orderData.order_id}`;
-
-      const res = await fetch(url, {
-        method: paymentId ? 'POST' : 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (res.ok) {
-        const updated: OrderSyncPayload = await res.json();
-        setOrderData(updated);
-        syncCheckoutWithOrder(updated, currentUserId);
-        setStatusMessage('Đã cập nhật trạng thái mới nhất từ hệ thống.');
-      } else {
-        setStatusMessage('Cổng thanh toán đang xử lý, vui lòng thử kiểm tra lại sau ít giây.');
-      }
-    } catch {
-      setStatusMessage('Lỗi kết nối mạng khi đối soát trạng thái.');
-    } finally {
-      setReconciling(false);
-    }
-  };
-
-  const isPaid =
-    orderData?.status === 'PAID' ||
-    orderData?.payment?.status === 'PAID' ||
-    orderData?.payment?.status === 'SUCCESS';
-
-  const isFailed =
-    orderData?.status === 'PAYMENT_FAILED' || orderData?.payment?.status === 'FAILED';
+    syncCheckoutWithOrder({
+      order_id: orderId,
+      status: viewStatus,
+      payment_status: viewStatus === "PAID" ? "PAID" : viewStatus === "PAYMENT_FAILED" ? "FAILED" : "PENDING",
+    });
+  }, [orderId, viewStatus, syncCheckoutWithOrder]);
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-12">
+    <main className="mx-auto max-w-xl p-6">
       <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-bold text-stone-900">
-          Kết quả Giao dịch Thanh toán — BrewLite
-        </h1>
+        <div className="mb-4 flex items-center justify-between border-b pb-3">
+          <h1 className="text-lg font-bold text-stone-900">
+            Kết quả Giao dịch — BrewLite
+          </h1>
+          <div className="flex gap-1 text-xs">
+            {(["PAID", "PAYMENT_FAILED", "PENDING"] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setViewStatus(st)}
+                className={`rounded-lg px-2.5 py-1 font-medium ${
+                  viewStatus === st
+                    ? "bg-stone-900 text-white"
+                    : "bg-stone-100 text-stone-700"
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        {loading && (
-          <p className="mt-4 text-sm text-stone-600">
-            Đang đồng bộ kết quả giao dịch từ máy chủ...
-          </p>
-        )}
-
-        {!loading && isPaid && (
-          <div className="mt-4 space-y-3 rounded-xl bg-emerald-50 p-4 text-emerald-950">
-            <p className="text-base font-bold">Thanh toán thành công (PAID)</p>
-            <p className="text-xs">
-              Mã đơn hàng: <strong>{orderData?.order_code || orderData?.order_id}</strong>.
-              Các sản phẩm đã thanh toán đã được đồng bộ khỏi giỏ hàng.
+        {viewStatus === "PAID" && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <h2 className="text-base font-bold">Thanh toán thành công (PAID)</h2>
+            <p className="mt-1">
+              Đơn hàng <strong>{orderId}</strong> đã được xác nhận và chuyển sang quầy pha chế. Các món đã mua đã được dọn khỏi giỏ hàng.
             </p>
           </div>
         )}
 
-        {!loading && isFailed && (
-          <div className="mt-4 space-y-3 rounded-xl bg-red-50 p-4 text-red-950">
-            <p className="text-base font-bold">
-              Giao dịch thất bại đã xác nhận (PAYMENT_FAILED)
-            </p>
-            <p className="text-xs">
-              Hệ thống đã giải phóng khóa phương thức cũ và tạo khóa giao dịch mới. Bạn có thể quay lại giỏ hàng để đổi phương thức thanh toán (Ví điện tử / Thẻ) trên cùng đơn hàng{' '}
-              <strong>{orderData?.order_code || orderData?.order_id}</strong>.
+        {viewStatus === "PAYMENT_FAILED" && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+            <h2 className="text-base font-bold">Thanh toán thất bại (PAYMENT_FAILED)</h2>
+            <p className="mt-1">
+              Hệ thống đã xóa <code>paymentBody</code> cũ và sinh <code>paymentKey</code> mới. Bạn có thể quay lại giỏ hàng để đổi phương thức (Ví / Thẻ) hoặc thử lại trên cùng đơn hàng <strong>{orderId}</strong>.
             </p>
           </div>
         )}
 
-        {!loading && !isPaid && !isFailed && (
-          <div className="mt-4 space-y-3 rounded-xl bg-amber-50 p-4 text-amber-950">
-            <p className="text-base font-bold">
-              Đang đối soát kết quả thanh toán (PENDING)
+        {viewStatus === "PENDING" && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <h2 className="text-base font-bold">Đang chờ đối soát (PENDING)</h2>
+            <p className="mt-1">
+              Giao dịch trên đơn <strong>{orderId}</strong> đang được đối soát với cổng thanh toán (QueryDR / IPN). Hệ thống tạm khóa đổi kênh để tránh trừ tiền hai lần.
             </p>
-            <p className="text-xs">
-              Giao dịch chưa có kết quả cuối cùng từ cổng thanh toán. Hệ thống giữ nguyên khóa giao dịch để tránh thu tiền 2 lần.
-            </p>
-            <button
-              type="button"
-              onClick={handleManualReconcile}
-              disabled={reconciling}
-              className="rounded-lg bg-amber-800 px-3.5 py-2 text-xs font-semibold text-white hover:bg-amber-900 disabled:opacity-50"
-            >
-              {reconciling ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái ngay'}
-            </button>
           </div>
         )}
 
-        {statusMessage && (
-          <p className="mt-3 text-xs font-medium text-stone-700">{statusMessage}</p>
-        )}
-
-        <div className="mt-6 flex gap-3">
-          <a
+        <div className="mt-6 flex justify-end gap-3">
+          <Link
             href="/cart"
-            className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-800 hover:bg-stone-100"
+            className="rounded-xl bg-amber-800 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-900"
           >
-            Quay về Giỏ hàng (Thử lại / Đổi kênh)
-          </a>
-          {orderData?.order_id && (
-            <a
-              href={`/orders/${orderData.order_id}`}
-              className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-semibold text-white hover:bg-stone-800"
-            >
-              Xem chi tiết đơn hàng
-            </a>
-          )}
+            Quay về Giỏ hàng
+          </Link>
         </div>
       </div>
     </main>

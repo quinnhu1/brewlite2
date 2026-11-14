@@ -1,48 +1,84 @@
-# Deploy (VPS)
+# Deploy (VPS + Caddy) — theo ADR-003
 
-The `deploy` job in `.github/workflows/ci.yml` runs only when **both** repository
-variables are set:
+Luồng: GitHub CI build 2 image gắn tag = commit SHA → VPS pull → backup → migrate
+→ `up -d` → health check qua Caddy → smoke test. Job `deploy` chỉ chạy khi bật
+biến repo.
 
-| Variable | Value |
-| --- | --- |
-| `PUBLISH_IMAGES` | `true` — build and push `ghcr.io/<owner>/<repo>-api` and `-web` |
-| `DEPLOY_ENABLED` | `true` — run the SSH release |
+## 1. Biến và secret trên GitHub
 
-Required secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (private key) and
-`VPS_KNOWN_HOSTS` (output of `ssh-keyscan <host>`). The `production`
-environment should be protected with required reviewers.
+| Loại | Tên | Giá trị |
+| --- | --- | --- |
+| Variable | `PUBLISH_IMAGES` | `true` — build & push `ghcr.io/<owner>/<repo>-api` và `-web` |
+| Variable | `DEPLOY_ENABLED` | `true` — chạy job SSH deploy |
+| Variable | `NEXT_PUBLIC_API_URL` | `/api` (mặc định) hoặc URL tuyệt đối nếu tách domain API |
+| Variable | `PRODUCTION_URL` | `https://brew.example.com` — dùng cho bước smoke test |
+| Secret | `VPS_HOST` | IP hoặc hostname VPS |
+| Secret | `VPS_USER` | user SSH (không dùng root) |
+| Secret | `VPS_SSH_KEY` | private key (ed25519) |
+| Secret | `VPS_KNOWN_HOSTS` | `ssh-keyscan <host>` |
 
-## One-time server setup
+Environment `production` nên bật required reviewers. Job `deploy` cần **cả**
+`PUBLISH_IMAGES=true` **và** `DEPLOY_ENABLED=true`, vì nó `needs: images`.
+
+## 2. Chuẩn bị VPS (Ubuntu 24.04, một lần)
 
 ```bash
+# Docker + compose plugin
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 curl
+sudo usermod -aG docker "$USER"   # đăng nhập lại sau bước này
+
+# Thư mục release
 sudo mkdir -p /opt/brewlite && sudo chown "$USER" /opt/brewlite
 cd /opt/brewlite
-cp /path/to/deploy/env.example .env   # then fill in real secrets
+cp /đường/dẫn/deploy/env.example .env   # rồi điền giá trị thật
 chmod 600 .env
 ```
 
-The stack publishes only on loopback (`API_PORT=3001`, `WEB_PORT=3000`).
-Terminate TLS on the host and proxy to those ports, e.g. nginx:
+- Mở inbound 22/80/443 (và 443/udp cho HTTP/3 nếu muốn).
+- Trỏ bản ghi DNS `A`/`AAAA` của `PUBLIC_DOMAIN` về VPS **trước** lần deploy đầu,
+  nếu không Caddy sẽ không xin được chứng chỉ.
+- Nếu package GHCR để private: tạo PAT có `read:packages`, điền
+  `GHCR_USER`/`GHCR_TOKEN` trong `.env`.
+- Nếu VNPay Sandbox: đăng ký IPN `https://<domain>/api/payments/vnpay/ipn` và đặt
+  `VNPAY_RETURN_URL=https://<domain>/api/payments/vnpay/return`.
 
-```nginx
-# brew.example.com -> web
-location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
-# api.example.com  -> api
-location / { proxy_pass http://127.0.0.1:3001; proxy_set_header Host $host; }
+## 3. Một release gồm những gì
+
+`deploy/release.sh <sha>`:
+
+1. `compose pull api web caddy` — image pin theo đúng commit, không dùng `latest`.
+2. `deploy/backup.sh` — `pg_dump` vào `/opt/brewlite/backups`, giữ 7 ngày.
+3. `compose run --rm --no-deps api npx prisma migrate deploy` — migration là
+   bước riêng, fail thì dừng trước khi chạy version mới.
+4. `compose up -d --remove-orphans`.
+5. Health check công khai `https://<domain>/api/health` và `https://<domain>/`.
+6. Ghi `.last-good-tag`; nếu health fail thì quay lại tag trước đó và job fail.
+7. CI chạy `npm run test:smoke -- "$PRODUCTION_URL" "$PRODUCTION_URL/api"`.
+
+Lưu ý rollback chỉ đổi image, **không** revert migration đã áp dụng — kiểm tra
+tương thích schema trước khi rollback.
+
+## 4. Caddy
+
+`deploy/Caddyfile` được mount read-only. Một domain duy nhất:
+
+- `/api/*` → `api:3001` (Caddy strip prefix `/api`)
+- còn lại → `web:3000`
+
+Nhờ vậy web build với `NEXT_PUBLIC_API_URL=/api`, đổi domain không phải build lại.
+TLS do Caddy tự cấp/gia hạn, lưu ở volume `caddy_data`.
+
+## 5. Kiểm tra nhanh trên máy
+
+```powershell
+npm run test:smoke -- https://brew.example.com https://brew.example.com/api
+docker compose -f docker-compose.prod.yml --env-file deploy/env.example config
 ```
 
-`NEXT_PUBLIC_API_URL` is baked into the web image at build time, so set the
-repository variable `NEXT_PUBLIC_API_URL=https://api.example.com` **before** the
-first image is published. The API must be reachable on that origin from the
-browser, and `FRONTEND_URL` must be the web origin so CORS matches.
+Muốn thử toàn bộ stack ở máy local (không cần domain thật):
 
-## What a release does
+```bash
+PUBLIC_DOMAIN=localhost CURL_OPTS=--insecure bash deploy/release.sh <sha>
+```
 
-1. `images` pushes `:<commit-sha>` and `:main` tags for both components.
-2. `deploy` uploads `docker-compose.prod.yml` + `deploy/` to
-   `/opt/brewlite/incoming-<sha>.tar.gz`.
-3. `bash deploy/release.sh <sha>` pulls the pinned tags, runs
-   `docker compose up -d`, and waits for the API and web health checks.
-4. The API container applies `prisma migrate deploy` on start.
-5. On failure the script redeploys `.last-good-tag` and exits non-zero, so the
-   GitHub run is marked failed.
+Caddy sẽ dùng CA nội bộ; trình duyệt/curl cần bỏ qua cảnh báo chứng chỉ.

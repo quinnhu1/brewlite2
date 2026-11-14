@@ -2,8 +2,11 @@
   "name": "brewlite",
   "private": true,
   "scripts": {
-    "dev:backend": "npm --prefix backend run start:dev",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "check": "npm --prefix backend run build && npm --prefix backend run lint && npm --prefix backend test -- --runInBand && npm --prefix frontend run lint && npm --prefix frontend run build"
+    "dev:backend": "npm --prefix app/api run start:dev",
+    "dev:frontend": "npm --prefix app/web run dev",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d",
+    "db:down": "docker compose -f docker-compose.dev.yml down",
+    "check": "npm --prefix app/api run build && npm --prefix app/api run lint && npm --prefix app/api test -- --runInBand && npm --prefix app/web run lint && npm --prefix app/web run build",
+    "test:smoke": "node scripts/smoke.mjs"
   }
 }

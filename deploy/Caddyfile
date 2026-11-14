@@ -1,0 +1,25 @@
+# Caddy config for the BrewLite VPS. docker-compose.prod.yml mounts this file
+# read-only and passes PUBLIC_DOMAIN in from /opt/brewlite/.env.
+#
+# TLS certificates are issued and renewed automatically once the domain points
+# at the server and ports 80/443 are reachable.
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	# The web app calls the API on its own origin under /api, so changing the
+	# public domain never requires rebuilding the web image.
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

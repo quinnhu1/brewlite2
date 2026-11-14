@@ -1,0 +1,32 @@
+# Local development database only.
+#
+#   npm run db:up      # docker compose -f docker-compose.dev.yml up -d
+#   npm run db:down
+#
+# The API connects with:
+#   postgresql://brewlite:<password>@localhost:5433/brewlite?schema=public
+#
+# Production runs everything through docker-compose.prod.yml (see deploy/).
+name: brewlite
+
+services:
+  db:
+    image: postgres:16
+    container_name: brewlite-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-brewlite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CONGNGHEPHANMEM12345}
+      POSTGRES_DB: ${POSTGRES_DB:-brewlite}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - brewlite_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  brewlite_pgdata:

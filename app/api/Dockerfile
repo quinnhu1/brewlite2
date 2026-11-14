@@ -10,4 +10,6 @@ RUN DATABASE_URL=postgresql://unused:unused@localhost/unused DIRECT_URL=postgres
 ENV NODE_ENV=production
 EXPOSE 3001
 USER node
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Migrations run as a separate release step (deploy/release.sh) so a failed
+# migration stops the deploy before the new version starts.
+CMD ["node", "dist/main.js"]

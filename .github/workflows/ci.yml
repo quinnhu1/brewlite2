@@ -1,0 +1,179 @@
+name: BrewLite CI
+
+'on':
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify BrewLite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5432/brewlite_test?schema=public
+      DIRECT_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5432/brewlite_test?schema=public
+      TEST_DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5432/brewlite_test?schema=public
+      JWT_SECRET: ci-only-secret-never-used-in-production
+      PAYMENT_PROVIDER: mock
+      PAYMENT_ALLOW_MOCK_IN_PRODUCTION: "true"
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: brewlite
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: brewlite_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U brewlite -d brewlite_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            app/api/package-lock.json
+            app/web/package-lock.json
+
+      - name: Install API dependencies
+        working-directory: app/api
+        run: npm ci
+
+      - name: Lint API
+        working-directory: app/api
+        run: npm run lint
+
+      - name: Build API
+        working-directory: app/api
+        run: npm run build
+
+      - name: Unit test API
+        working-directory: app/api
+        run: npm test -- --runInBand --passWithNoTests
+
+      - name: Apply database migrations
+        working-directory: app/api
+        run: npm run db:migrate
+
+      - name: Seed database
+        working-directory: app/api
+        run: npm run db:seed
+
+      - name: E2E test API
+        if: hashFiles('app/api/test/jest-e2e.json') != ''
+        working-directory: app/api
+        run: npm run test:e2e
+
+      - name: Install web dependencies
+        working-directory: app/web
+        run: npm ci
+
+      - name: Lint web
+        working-directory: app/web
+        run: npm run lint
+
+      - name: Build web
+        working-directory: app/web
+        run: npm run build
+
+  images:
+    name: Publish ${{ matrix.component }} image
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PUBLISH_IMAGES == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-${{ matrix.component }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable commit tag
+        uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.component }}
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:3001' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+  deploy:
+    name: Deploy to VPS
+    needs: images
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: brewlite-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure verified SSH identity
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST_KEYS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$HOST_KEYS" > "$HOME/.ssh/known_hosts"
+
+      - name: Upload deployment configuration and release
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          tar -czf /tmp/brewlite-deploy.tar.gz deploy docker-compose.prod.yml
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/brewlite-deploy.tar.gz "$VPS_USER@$VPS_HOST:/opt/brewlite/incoming-$COMMIT_SHA.tar.gz"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
+            "cd /opt/brewlite && tar -xzf incoming-$COMMIT_SHA.tar.gz && rm incoming-$COMMIT_SHA.tar.gz && bash deploy/release.sh $COMMIT_SHA"
+
+      - name: Remove temporary deploy key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

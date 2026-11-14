@@ -1,0 +1,86 @@
+name: brewlite
+
+# Production stack for the BrewLite VPS.
+# Images are published by .github/workflows/ci.yml and pinned to a commit SHA;
+# deploy/release.sh sets IMAGE_TAG for each release.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?add POSTGRES_USER to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?add POSTGRES_PASSWORD to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?add POSTGRES_DB to .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:?add GITHUB_REPOSITORY to .env}-api:${IMAGE_TAG:?IMAGE_TAG comes from deploy/release.sh}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:?add DATABASE_URL to .env}
+      DIRECT_URL: ${DIRECT_URL:?add DIRECT_URL to .env}
+      JWT_SECRET: ${JWT_SECRET:?add JWT_SECRET to .env}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-604800}
+      FRONTEND_URL: ${FRONTEND_URL:?add FRONTEND_URL to .env}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      ORDER_EXPIRY_WORKER: ${ORDER_EXPIRY_WORKER:-true}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-vnpay}
+      PAYMENT_ALLOW_MOCK_IN_PRODUCTION: ${PAYMENT_ALLOW_MOCK_IN_PRODUCTION:-false}
+      PAYMENT_MOCK_ALLOW_OVERRIDE: ${PAYMENT_MOCK_ALLOW_OVERRIDE:-false}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-}
+      VNPAY_QUERY_IP: ${VNPAY_QUERY_IP:-}
+    ports:
+      # Bound to loopback on purpose: terminate TLS with nginx/Caddy on the host.
+      - "127.0.0.1:${API_PORT:-3001}:3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  web:
+    image: ghcr.io/${GITHUB_REPOSITORY:?add GITHUB_REPOSITORY to .env}-web:${IMAGE_TAG:?IMAGE_TAG comes from deploy/release.sh}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports:
+      # NEXT_PUBLIC_API_URL is baked into the image at build time, so the
+      # reverse proxy must also expose the API on its public hostname.
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  pgdata:

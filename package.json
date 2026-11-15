@@ -2,8 +2,23 @@
   "name": "brewlite",
   "private": true,
   "scripts": {
-    "dev:backend": "npm --prefix backend run start:dev",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "check": "npm --prefix backend run build && npm --prefix backend run lint && npm --prefix backend test -- --runInBand && npm --prefix frontend run lint && npm --prefix frontend run build"
+    "setup": "npm ci && npm --prefix apps/api ci && npm --prefix apps/web ci",
+    "dev:api": "npm --prefix apps/api run start:dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:backend": "npm run dev:api",
+    "dev:frontend": "npm run dev:web",
+    "lint": "npm --prefix apps/api run lint && npm --prefix apps/web run lint",
+    "test": "npm --prefix apps/api test -- --runInBand",
+    "test:integration": "npm --prefix apps/api run test:e2e -- --runInBand",
+    "test:e2e": "playwright test --config tests/playwright.config.mjs",
+    "test:smoke": "node tests/integration/smoke.mjs",
+    "build": "npm --prefix apps/api run build && npm --prefix apps/web run build",
+    "test:client": "node --experimental-transform-types --test tests/unit/*.test.mjs",
+    "check": "npm run lint && npm test && npm run test:client && npm run build",
+    "db:migrate": "npm --prefix apps/api run db:migrate",
+    "db:seed": "npm --prefix apps/api run db:seed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
   }
 }

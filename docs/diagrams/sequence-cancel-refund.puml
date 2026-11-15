@@ -1,0 +1,51 @@
+@startuml
+!theme plain
+skinparam defaultFontName DejaVu Sans
+skinparam maxMessageSize 220
+title Sequence-02 — Hủy, hoàn và đặt đơn thay thế
+actor Customer as C
+participant UI
+participant "API / Worker" as API
+database PostgreSQL as DB
+participant VNPay
+C -> UI: Hủy / đổi món + lý do
+UI -> API: POST /orders/:id/cancel + JWT
+API -> DB: Lock Order; kiểm tra owner và chưa PREPARING
+API -> DB: Lưu cancellation_requested_at
+note over API,DB: Từ đây chặn pha chế và charge mới.
+alt Không có charge/pending
+  API -> DB: CANCELLED + release stock đúng một lần
+else Giao dịch đang pending
+  API --> UI: Đã nhận yêu cầu; tiếp tục đối soát
+  API -> VNPay: QueryDR (hoặc nhận IPN)
+  VNPay --> API: Kết quả có chữ ký
+  API -> DB: Ghi kết quả thu đã xác minh
+end
+alt Có khoản thu thành công
+  API -> DB: INSERT Refund duy nhất / payment
+  API -> API: Kiểm tra cấu hình/dữ liệu; ký payload
+  alt Chuẩn bị lỗi cục bộ, chưa gửi
+    API -> DB: review_required; submitted_at null\nThử gửi lần đầu sau khi sửa và hết cooldown
+  else Chuẩn bị thành công
+  API -> DB: Claim; lưu request_id, submitted_at; COMMIT
+  API -> VNPay: Full refund, amount gốc × 100
+  VNPay --> API: Response có chữ ký / timeout
+  alt Xác minh type02, amount, status00
+    API -> DB: Lock Order; refunded + CANCELLED
+    API -> DB: Đảo EARN + trả stock + receipt, COMMIT
+  else status05/06 hoặc chưa rõ
+    API -> DB: Processing/review + next_check_at
+    API -> VNPay: Query-only ở lần sau; không resend refund
+  end
+  end
+end
+UI -> API: GET /orders/:id
+API --> UI: Status, refund receipt, can_replace
+alt Hủy và hoàn xong
+  C -> UI: Chọn món mới
+  UI -> API: POST /orders + replacement_of_order_id
+  API -> DB: Kiểm tra đơn cũ đã hoàn; tạo order mới
+else Chưa hoàn xong
+  UI --> C: Hiển thị đang đối soát; chưa mở đơn thay thế
+end
+@enduml

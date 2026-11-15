@@ -1,0 +1,125 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> check
+> npm run lint && npm test && npm run test:client && npm run build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lint
+> npm --prefix apps/api run lint && npm --prefix apps/web run lint
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> backend@0.0.1 lint
+> oxlint --type-aware src/ test/
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> frontend@0.1.0 lint
+> eslint
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> test
+> npm --prefix apps/api test -- --runInBand
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> backend@0.0.1 test
+> node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand
+
+(node:153) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 3 passed, 3 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        0.887 s
+Ran all test suites.
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> test:client
+> node --experimental-transform-types --test tests/unit/*.test.mjs
+
+(node:186) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:186) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspace/scratch/cb823a61ce21/work/brewlite/apps/web/src/store/useCartStore.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /workspace/scratch/cb823a61ce21/work/brewlite/apps/web/package.json.
+✔ guest cart is adopted by the first authenticated account (1.282387ms)
+✔ switching account clears replacement, checkout, promo and the previous account cart (0.513115ms)
+✔ logout clears persisted private checkout information (0.306523ms)
+✔ late writes from the previous account cannot restore its checkout or replacement (0.23781ms)
+✔ refresh preserves a checkout belonging to the same account (0.753909ms)
+✔ legacy unowned state is discarded during migration (0.279873ms)
+✔ an API response for an old token is discarded after account switching (3.462ms)
+✔ switching accounts while a response body downloads also discards the old response (0.606867ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 186.454748
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> build
+> npm --prefix apps/api run build && npm --prefix apps/web run build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> backend@0.0.1 build
+> nest build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.4.2 (Turbopack)
+✓ Running next.config.ts took 25ms
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+- Cache Components enabled
+- Partial Prefetching enabled
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 519ms
+  Running TypeScript ...
+  Finished TypeScript in 1732ms ...
+  Collecting page data using 8 workers ...
+  Generating static pages using 8 workers (0/13) ...
+  Generating static pages using 8 workers (3/13) 
+  Generating static pages using 8 workers (6/13) 
+  Generating static pages using 8 workers (9/13) 
+✓ Generating static pages using 8 workers (13/13) in 445ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /account
+├ ○ /admin
+├ ○ /cart
+├ ○ /menu
+├   /menu/[id]
+│ └ ◐ /menu/[id]
+├   /orders/[id]
+│ └ ◐ /orders/[id]
+├ ○ /payment/result
+├ ○ /signin
+└ ○ /signup
+
+
+○  (Static)             prerendered as static content
+◐  (Partial Prerender)  prerendered as static HTML with dynamic server-streamed content
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+npm notice To update run: npm install -g npm@12.2.2
+npm notice

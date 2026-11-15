@@ -1,0 +1,36 @@
+BrewLite v1.3 — 14/11/2026
+Default Playwright runtime: browser executable missing.
+Retried with installed /usr/bin/chromium, without custom launch flags.
+The OS rejected browser launch; no UI assertion executed. This is BLOCKED, not application PASS.
+
+  ✘  1 tests/e2e/checkout.spec.mjs:4:1 › a customer retries checkout and confirms the same order (3ms)
+  ✘  2 tests/e2e/order-recovery.spec.mjs:22:1 › tracking retries a failed payment with another method, survives refresh and refunds once (1ms)
+  ✘  3 tests/e2e/order-recovery.spec.mjs:42:1 › tracking cancels a failed unpaid attempt without creating a refund (2ms)
+  ✘  4 tests/e2e/order-recovery.spec.mjs:50:1 › another customer cannot read an order through the browser (2ms)
+  ✘  5 tests/e2e/order-recovery.spec.mjs:62:1 › logout and signing into another account clears replacement checkout state (3ms)
+  ✘  6 tests/e2e/order-recovery.spec.mjs:91:1 › password change requires the current password and returns the user to sign in (1ms)
+  1) tests/e2e/checkout.spec.mjs:4:1 › a customer retries checkout and confirms the same order ─────
+    [pid=382][err] [382:382:1114/151332.945310:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=382][err] [382:382:1114/151332.945310:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  2) tests/e2e/order-recovery.spec.mjs:22:1 › tracking retries a failed payment with another method, survives refresh and refunds once 
+    [pid=416][err] [416:416:1114/151333.420890:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=416][err] [416:416:1114/151333.420890:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  3) tests/e2e/order-recovery.spec.mjs:42:1 › tracking cancels a failed unpaid attempt without creating a refund 
+    [pid=451][err] [451:451:1114/151333.890492:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=451][err] [451:451:1114/151333.890492:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  4) tests/e2e/order-recovery.spec.mjs:50:1 › another customer cannot read an order through the browser 
+    [pid=486][err] [486:486:1114/151334.355112:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=486][err] [486:486:1114/151334.355112:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  5) tests/e2e/order-recovery.spec.mjs:62:1 › logout and signing into another account clears replacement checkout state 
+    [pid=521][err] [521:521:1114/151335.005881:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=521][err] [521:521:1114/151335.005881:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  6) tests/e2e/order-recovery.spec.mjs:91:1 › password change requires the current password and returns the user to sign in 
+    [pid=556][err] [556:556:1114/151335.509963:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+      - [pid=556][err] [556:556:1114/151335.509963:FATAL:chrome/browser/process_singleton_posix.cc:297] Check failed: . socket() failed: Operation not permitted (1)
+  6 failed
+    tests/e2e/checkout.spec.mjs:4:1 › a customer retries checkout and confirms the same order ──────
+    tests/e2e/order-recovery.spec.mjs:22:1 › tracking retries a failed payment with another method, survives refresh and refunds once 
+    tests/e2e/order-recovery.spec.mjs:42:1 › tracking cancels a failed unpaid attempt without creating a refund 
+    tests/e2e/order-recovery.spec.mjs:50:1 › another customer cannot read an order through the browser 
+    tests/e2e/order-recovery.spec.mjs:62:1 › logout and signing into another account clears replacement checkout state 
+    tests/e2e/order-recovery.spec.mjs:91:1 › password change requires the current password and returns the user to sign in 

@@ -1,0 +1,130 @@
+name: BrewLite CI
+
+'on':
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify BrewLite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      DIRECT_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      TEST_DATABASE_URL: postgresql://brewlite:ci-local-only@127.0.0.1:5433/brewlite_test
+      NEXT_TELEMETRY_DISABLED: "1"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: brewlite
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: brewlite_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U brewlite -d brewlite_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+      - run: npm run setup
+      - run: npm run check
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run test:integration
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure-${{ github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+
+  images:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PUBLISH_IMAGES == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component: [api, web]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_USER: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
+      - name: Build and push immutable commit tag
+        env:
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          prefix="ghcr.io/${REPOSITORY,,}"
+          docker build --pull --build-arg NEXT_PUBLIC_API_URL=/api \
+            --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+            --label "org.opencontainers.image.revision=$COMMIT_SHA" \
+            -t "$prefix-$COMPONENT:$COMMIT_SHA" "apps/$COMPONENT"
+          docker push "$prefix-$COMPONENT:$COMMIT_SHA"
+
+  deploy:
+    needs: images
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: brewlite-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure verified SSH identity
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST_KEYS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$HOST_KEYS" > "$HOME/.ssh/known_hosts"
+      - name: Upload deployment configuration and release
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          tar -czf /tmp/brewlite-deploy.tar.gz deploy docker-compose.prod.yml
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/brewlite-deploy.tar.gz "$VPS_USER@$VPS_HOST:/opt/brewlite/incoming-$COMMIT_SHA.tar.gz"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
+            "cd /opt/brewlite && tar -xzf incoming-$COMMIT_SHA.tar.gz && rm incoming-$COMMIT_SHA.tar.gz && bash deploy/release.sh $COMMIT_SHA"
+      - name: Remove temporary deploy key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

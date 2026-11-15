@@ -1,0 +1,55 @@
+@startuml
+!theme plain
+skinparam defaultFontName DejaVu Sans
+title Activity-01 — luồng khách và xử lý lỗi
+|Khách / UI|
+start
+:Xem menu, chọn món, size, topping;
+:Điều chỉnh giỏ;
+if (Đã đăng nhập?) then (Chưa)
+  :Đăng ký / đăng nhập;
+else (Rồi)
+endif
+:Kiểm tra giá và xác nhận;
+|NestJS / PostgreSQL|
+:Kiểm tra JWT, DTO, giá DB và khuyến mãi;
+if (Dữ liệu hợp lệ?) then (Không)
+  |Khách / UI|
+  :Hiện lỗi để sửa dữ liệu;
+  stop
+else (Có)
+endif
+|NestJS / PostgreSQL|
+:Transaction giữ stock/version, tạo Order;
+if (Còn đủ hàng?) then (Không)
+  :Rollback, báo hết hàng / xung đột;
+  |Khách / UI|
+  :Giữ giỏ, tải lại tồn kho;
+  stop
+else (Có)
+endif
+|Khách / UI|
+:Chọn QR / thẻ và gửi payment key;
+|NestJS / PostgreSQL|
+:Khóa Order, kiểm tra key và một pending/success;
+|VNPay / Mock|
+:Xử lý thanh toán;
+|NestJS / PostgreSQL|
+:Xác minh kết quả; ReturnUrl chỉ điều hướng;
+if (Kết quả cuối?) then (Thành công)
+  :PAID, điểm một lần;
+  |Khách / UI|
+  :Hiện xác nhận, xóa phần giỏ đã mua, tracking;
+  stop
+elseif (Thất bại đã xác minh?) then (Có)
+  :PAYMENT_FAILED;
+  |Khách / UI|
+  :Giữ giỏ; đổi kênh/thử lại hoặc hủy;
+  stop
+else (Chưa rõ)
+  :Giữ pending và stock, worker QueryDR;
+  |Khách / UI|
+  :Hiện chờ xác nhận, cho gửi yêu cầu hủy;
+  stop
+endif
+@enduml

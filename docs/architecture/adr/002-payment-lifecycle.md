@@ -9,3 +9,5 @@
 **Lý do:** mọi khoản thu/hoàn có chứng từ cho quản lý; không ghi đè lịch sử; transaction bảo vệ stock/points. Trả 200 từ cancel nghĩa là đã tiếp nhận, phải đọc status/actions/refunds để biết hoàn tất.
 
 **Đánh đổi:** trạng thái chưa rõ có thể giữ stock lâu hơn 20 phút; cần vận hành đối soát. Không đổi kênh khi còn pending. Không tự coi response00 của API là tiền đã hoàn. Nếu sandbox không cung cấp bằng chứng hoàn cuối, phải để processing/review và xác minh với VNPay.
+
+**Bổ sung 1.3:** kiểm tra và ký payload hoàn trước khi ghi submitted_at. Lỗi local giữ null, được phép gửi lần đầu sau khi sửa. Chỉ sau durable claim mới áp dụng query-only cho timeout/crash. Không tự xóa submitted_at của phiếu cũ; thiếu bằng chứng gửi/hoàn cần đối chiếu provider. Các worker ưu tiên next_check_at để tránh phiếu cũ làm chậm phiếu khác.

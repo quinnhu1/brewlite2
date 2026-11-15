@@ -1,0 +1,106 @@
+import {expect,test} from '@playwright/test';
+import {randomInt,randomUUID} from 'node:crypto';
+async function fixture(page,request,info,outcome='FAILED') {
+  const id=String(randomInt(100_000_000)).padStart(8,'0');
+  const email=`recovery-${id}@test.local`,phone=`08${id}`,password='browser-test-123';
+  const api=info.config.metadata.api;
+  const registered=await request.post(api+'/auth/register',{data:{email,phone,password,name:'Recovery E2E'}});
+  expect(registered.status()).toBe(201);
+  const login=await request.post(api+'/auth/login',{data:{identifier:email,password}});
+  const {accessToken}=await login.json();
+  const headers={Authorization:`Bearer ${accessToken}`};
+  const order=await request.post(api+'/orders',{headers:{...headers,'Idempotency-Key':randomUUID()},data:{customer_name:'Recovery E2E',customer_phone:phone,pickup_method:'AT_COUNTER',items:[{product_id:'c1111111-1111-4111-8111-000000000001',size:'S',quantity:1,topping_ids:[]}]}});
+  expect(order.status()).toBe(201);
+  const {order_id}=await order.json();
+  const payment=await request.post(api+'/payments',{headers:{...headers,'Idempotency-Key':randomUUID()},data:{order_id,method:'banking',simulate_result:outcome}});
+  expect(payment.ok()).toBeTruthy();
+  await page.goto('/signin');
+  await page.evaluate(token=>localStorage.setItem('token',token),accessToken);
+  await page.goto('/orders/'+order_id);
+  return {api,headers,order_id,email,password};
+}
+test('tracking retries a failed payment with another method, survives refresh and refunds once',async({page,request},info)=>{
+  const {api,headers,order_id}=await fixture(page,request,info);
+  await expect(page.getByText('Thanh toán thất bại',{exact:true}).first()).toBeVisible();
+  await page.getByLabel('Phương thức mô phỏng').selectOption('momo');
+  await page.getByRole('button',{name:'Thanh toán / thử lại',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Yêu cầu hủy và hoàn tiền'})).toBeVisible();
+  await page.reload();
+  await page.getByLabel('Lý do hủy').fill('Đổi sang món khác');
+  await page.getByRole('button',{name:'Yêu cầu hủy và hoàn tiền'}).click();
+  await expect(page.getByText('Đã hủy',{exact:true})).toBeVisible();
+  await expect(page.getByTestId('refund-receipt')).toContainText('Hoàn tiền mô phỏng');
+  await page.reload();
+  await expect(page.getByTestId('refund-receipt')).toHaveCount(1);
+  const detail=await (await request.get(`${api}/orders/${order_id}`,{headers})).json();
+  expect(detail.payment_attempts).toHaveLength(2);
+  expect(detail.refunds).toHaveLength(1);
+  expect(detail.status).toBe('CANCELLED');
+  await page.getByRole('button',{name:'Chọn món cho đơn thay thế'}).click();
+  await expect(page).toHaveURL(/\/menu$/);
+});
+test('tracking cancels a failed unpaid attempt without creating a refund',async({page,request},info)=>{
+  const {api,headers,order_id}=await fixture(page,request,info);
+  await page.getByRole('button',{name:'Yêu cầu hủy đơn',exact:true}).click();
+  await expect(page.getByText('Đã hủy',{exact:true})).toBeVisible();
+  const detail=await (await request.get(`${api}/orders/${order_id}`,{headers})).json();
+  expect(detail.refunds).toHaveLength(0);
+  expect(detail.actions.can_retry_payment).toBe(false);
+});
+test('another customer cannot read an order through the browser',async({page,request},info)=>{
+  const {order_id}=await fixture(page,request,info,'SUCCESS');
+  const id=String(randomInt(100_000_000)).padStart(8,'0');
+  const api=info.config.metadata.api;
+  await request.post(api+'/auth/register',{data:{email:`other-${id}@test.local`,phone:`07${id}`,name:'Other user',password:'browser-test-123'}});
+  const res=await request.post(api+'/auth/login',{data:{identifier:`other-${id}@test.local`,password:'browser-test-123'}});
+  const {accessToken}=await res.json();
+  await page.evaluate(token=>localStorage.setItem('token',token),accessToken);
+  await page.goto('/orders/'+order_id);
+  await expect(page.locator('main p[role="alert"]')).toContainText('Không tìm thấy đơn hàng');
+});
+
+test('logout and signing into another account clears replacement checkout state',async({page,request},info)=>{
+  const {api,headers,order_id}=await fixture(page,request,info,'SUCCESS');
+  await request.post(`${api}/orders/${order_id}/cancel`,{headers,data:{reason:'Replacement isolation test'}});
+  await page.reload();
+  await page.getByRole('button',{name:'Chọn món cho đơn thay thế'}).click();
+  await expect(page).toHaveURL(/\/menu$/);
+  const old=await page.evaluate(()=>JSON.parse(localStorage.getItem('brewlite-cart-v3')).state);
+  expect(old.replacementOrderId).toBe(order_id);
+  await page.goto('/account');
+  await page.getByRole('button',{name:'Đăng xuất mọi phiên'}).click();
+  await expect(page).toHaveURL(/\/signin$/);
+  const n=String(randomInt(100_000_000)).padStart(8,'0'),email=`switch-${n}@test.local`,password='new-account-test-password123';
+  await request.post(api+'/auth/register',{data:{name:'New account',email,phone:`06${n}`,password}});
+  await page.getByLabel('Email or phone').fill(email);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page).toHaveURL(/\/account$/);
+  const current=await page.evaluate(()=>JSON.parse(localStorage.getItem('brewlite-cart-v3')).state);
+  expect(current.ownerUserId).not.toBe(old.ownerUserId);
+  expect(current.replacementOrderId).toBeNull();expect(current.checkout).toBeNull();
+  await page.goto('/menu?category=Classic%20Coffee');
+  await page.getByRole('button').filter({has:page.getByRole('heading',{name:'Espresso',exact:true})}).click();
+  await page.getByRole('button',{name:'Add to cart',exact:true}).click();
+  await page.goto('/cart');await page.getByRole('button',{name:'PAYMENT',exact:true}).click();
+  await page.getByRole('button',{name:'Kiểm tra giá và tiếp tục'}).click();
+  await page.getByRole('button',{name:'CONFIRM · Tiếp tục thanh toán'}).click();
+  await expect(page.getByRole('heading',{name:'Successful!',exact:true})).toBeVisible();
+});
+
+test('password change requires the current password and returns the user to sign in',async({page,request},info)=>{
+  const {api,headers,email,password}=await fixture(page,request,info);
+  await page.goto('/account');
+  await page.getByLabel(/Mật khẩu mới/).fill('changed-browser-password123');
+  await page.getByLabel('Mật khẩu hiện tại').fill('incorrect-password');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(page.locator('main p[role="alert"]')).toContainText('Mật khẩu hiện tại');
+  await page.getByLabel('Mật khẩu hiện tại').fill(password);
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(page).toHaveURL(/\/signin\?password_changed=1$/);
+  expect((await request.get(api+'/auth/me',{headers})).status()).toBe(401);
+  await page.getByLabel('Email or phone').fill(email);
+  await page.getByLabel('Password',{exact:true}).fill('changed-browser-password123');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page).toHaveURL(/\/account$/);
+});

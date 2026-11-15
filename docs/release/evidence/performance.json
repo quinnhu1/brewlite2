@@ -1,0 +1,127 @@
+{
+  "environment": "Measured API_BASE_URL; this is not a public availability/SLA guarantee.",
+  "writes": true,
+  "external_gateway_network_measured": false,
+  "results": [
+    {
+      "route": "GET /health",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 2.58,
+      "p95_ms": 6.75,
+      "max_ms": 9.01,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "GET /products",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 4.54,
+      "p95_ms": 6.48,
+      "max_ms": 12.17,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "GET /products/:id",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 3.22,
+      "p95_ms": 5.12,
+      "max_ms": 10.49,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /auth/register",
+      "samples": 5,
+      "concurrency": 1,
+      "p50_ms": 60.6,
+      "p95_ms": 76.68,
+      "max_ms": 76.68,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /auth/login",
+      "samples": 5,
+      "concurrency": 1,
+      "p50_ms": 59.51,
+      "p95_ms": 63.88,
+      "max_ms": 63.88,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /orders/quote",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 10.68,
+      "p95_ms": 20.9,
+      "max_ms": 40.02,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /orders",
+      "samples": 20,
+      "concurrency": 1,
+      "p50_ms": 8.36,
+      "p95_ms": 13.98,
+      "max_ms": 15.57,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /payments (mock)",
+      "samples": 20,
+      "concurrency": 1,
+      "p50_ms": 10.64,
+      "p95_ms": 12.97,
+      "max_ms": 16.37,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "GET /orders/:id",
+      "samples": 20,
+      "concurrency": 1,
+      "p50_ms": 3.5,
+      "p95_ms": 5.2,
+      "max_ms": 5.32,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "POST /orders/:id/cancel (mock refund)",
+      "samples": 20,
+      "concurrency": 1,
+      "p50_ms": 16.27,
+      "p95_ms": 20.34,
+      "max_ms": 21.55,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "GET /auth/me",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 2.97,
+      "p95_ms": 4.19,
+      "max_ms": 9.14,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    },
+    {
+      "route": "GET /orders/me",
+      "samples": 100,
+      "concurrency": 5,
+      "p50_ms": 13.7,
+      "p95_ms": 17.72,
+      "max_ms": 21.39,
+      "budget_ms": 500,
+      "all_observed_under_budget": true
+    }
+  ]
+}

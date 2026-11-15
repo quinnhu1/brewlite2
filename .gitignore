@@ -6,18 +6,22 @@
 **/.next/
 **/dist/
 **/coverage/
+playwright-report/
+test-results/
 
 # Local environment files
 .env
 .env.*
 !.env.example
-backend/.env
-frontend/.env.local
 
 # Logs
 *.log
 npm-debug.log*
+backups/
 
 # Operating system
 .DS_Store
 Thumbs.db
+
+!.env.production.example
+.deploy/

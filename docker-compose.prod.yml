@@ -1,0 +1,97 @@
+name: brewlite
+x-api-env: &api-env
+  NODE_ENV: production
+  PORT: 3001
+  FRONTEND_URL: https://${DOMAIN:?Set DOMAIN}
+  TRUST_PROXY_HOPS: 1
+  DATABASE_URL: postgresql://brewlite:${POSTGRES_PASSWORD:?Set a hex database password}@db:5432/brewlite?schema=public
+  DIRECT_URL: postgresql://brewlite:${POSTGRES_PASSWORD}@db:5432/brewlite?schema=public
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+  PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-vnpay}
+  PAYMENT_ALLOW_MOCK_IN_PRODUCTION: ${PAYMENT_ALLOW_MOCK_IN_PRODUCTION:-false}
+  PAYMENT_MOCK_ALLOW_OVERRIDE: ${PAYMENT_MOCK_ALLOW_OVERRIDE:-false}
+  PAYMENT_RECONCILE_WORKER: "true"
+  ORDER_EXPIRY_WORKER: "true"
+  VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+  VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+  VNPAY_RETURN_URL: https://${DOMAIN}/api/payments/vnpay/return
+  VNPAY_QUERY_IP: ${VPS_IPV4:?Set the server public IPv4}
+  VNPAY_REFUND_ENABLED: ${VNPAY_REFUND_ENABLED:-false}
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: brewlite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: brewlite
+    command: ["postgres", "-c", "max_connections=40", "-c", "shared_buffers=64MB"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    networks: [database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brewlite -d brewlite"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    logging: &logging
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  migrate:
+    image: ${IMAGE_REGISTRY:?Set ghcr.io/owner/repository}-api:${IMAGE_TAG:?Set IMAGE_TAG}
+    profiles: [ops]
+    environment: *api-env
+    command: ["npx", "prisma", "migrate", "deploy"]
+    networks: [database]
+    depends_on:
+      db: {condition: service_healthy}
+    logging: *logging
+  api:
+    image: ${IMAGE_REGISTRY}-api:${IMAGE_TAG}
+    restart: unless-stopped
+    environment: *api-env
+    networks: [edge, database]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *logging
+  web:
+    image: ${IMAGE_REGISTRY}-web:${IMAGE_TAG}
+    restart: unless-stopped
+    environment: {NODE_ENV: production, NEXT_TELEMETRY_DISABLED: "1"}
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/signin').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *logging
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_healthy}
+    logging: *logging
+networks:
+  edge:
+  database:
+    internal: true
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

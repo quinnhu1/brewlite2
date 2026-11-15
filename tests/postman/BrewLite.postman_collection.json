@@ -1,0 +1,432 @@
+{
+  "info": {
+    "name": "BrewLite — Checkout, recovery, refund",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Chạy từng request phù hợp provider. Không chạy cả nhánh mock và VNPay trong một collection run. Các giá trị bí mật để local, không export token/password. Đăng nhập lại để tạo key bộ test mới."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "checkoutKey",
+      "value": ""
+    },
+    {
+      "key": "failedKey",
+      "value": ""
+    },
+    {
+      "key": "successKey",
+      "value": ""
+    },
+    {
+      "key": "gatewayKey",
+      "value": ""
+    },
+    {
+      "key": "newPassword",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Login — đặt email/password trước",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Login 200\",()=>pm.response.to.have.status(200));",
+              "if(pm.response.code===200){pm.collectionVariables.set(\"token\",pm.response.json().accessToken); pm.collectionVariables.set(\"checkoutKey\",pm.variables.replaceIn(\"{{$guid}}\")); pm.collectionVariables.set(\"failedKey\",pm.variables.replaceIn(\"{{$guid}}\")); pm.collectionVariables.set(\"successKey\",pm.variables.replaceIn(\"{{$guid}}\")); pm.collectionVariables.set(\"gatewayKey\",pm.variables.replaceIn(\"{{$guid}}\"));}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Menu",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/products"
+      }
+    },
+    {
+      "name": "3. Quote (không giữ tồn)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/orders/quote",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_name\": \"Postman Demo\",\n  \"customer_phone\": \"0901234567\",\n  \"pickup_method\": \"AT_COUNTER\",\n  \"items\": [\n    {\n      \"product_id\": \"c1111111-1111-4111-8111-000000000001\",\n      \"size\": \"S\",\n      \"quantity\": 1,\n      \"topping_ids\": []\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "4. Create order — gửi lặp giữ nguyên key/body",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{checkoutKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/orders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer_name\": \"Postman Demo\",\n  \"customer_phone\": \"0901234567\",\n  \"pickup_method\": \"AT_COUNTER\",\n  \"items\": [\n    {\n      \"product_id\": \"c1111111-1111-4111-8111-000000000001\",\n      \"size\": \"S\",\n      \"quantity\": 1,\n      \"topping_ids\": []\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Created\",()=>pm.response.to.have.status(201));",
+              "if(pm.response.code===201)pm.collectionVariables.set(\"orderId\",pm.response.json().order_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5a. MOCK — failure",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{failedKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/payments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_id\": \"{{orderId}}\",\n  \"method\": \"banking\",\n  \"simulate_result\": \"FAILED\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Mock failed\",()=>pm.expect(pm.response.json().payment_status).eq(\"failed\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5b. MOCK — retry success (key mới)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{successKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/payments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_id\": \"{{orderId}}\",\n  \"method\": \"momo\",\n  \"simulate_result\": \"SUCCESS\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Paid\",()=>pm.expect(pm.response.json().order_status).eq(\"PAID\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5c. VNPAY — QR, dùng riêng khi provider=vnpay",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{gatewayKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/payments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_id\": \"{{orderId}}\",\n  \"method\": \"vnpay\",\n  \"bank_code\": \"VNPAYQR\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(pm.response.code===200)pm.collectionVariables.set(\"paymentId\",pm.response.json().payment_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Tracking + attempts/refunds",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/orders/{{orderId}}"
+      }
+    },
+    {
+      "name": "7. Gửi yêu cầu hủy (200 chưa chắc đã hoàn xong)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/orders/{{orderId}}/cancel",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Đổi món qua Postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "8. Reconcile VNPay theo cooldown",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/payments/{{paymentId}}/reconcile"
+      }
+    },
+    {
+      "name": "AUTH — chạy tay trên tài khoản test, làm mất hiệu lực token cũ",
+      "description": "Không chạy cả folder tự động trên tài khoản thật. Đổi mật khẩu và logout đều thu hồi mọi phiên. Đổi mật khẩu xong cần cập nhật password cục bộ rồi Login lại trước các request khác. Không export secret.",
+      "item": [
+        {
+          "name": "Đổi mật khẩu với mật khẩu hiện tại",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"password\": \"{{newPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Password changed\",()=>pm.response.to.have.status(200));",
+                  "// Token cũ được giữ để tự gọi GET /auth/me và xác minh 401."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra token cũ sau đổi mật khẩu hoặc logout — 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Old session revoked\",()=>pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng xuất mọi phiên — cần Login trước",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Logged out\",()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+@startuml
+!theme plain
+skinparam defaultFontName DejaVu Sans
+top to bottom direction
+title Deployment-01 — cấu hình mục tiêu AWS Ubuntu (chưa xác minh live)
+node "Laptop / điện thoại" as CLIENT {
+  artifact "Trình duyệt" as BROWSER
+}
+cloud "Internet / DNS A" as DNS
+node "AWS EC2 Ubuntu 24.04\nx86_64 · 52.64.177.7" as VPS {
+  node "Docker edge network" {
+    node "proxy: Caddy" as PROXY
+    node "web: Next.js :3000" as WEB
+    node "api: NestJS :3001\nOrders / Payments / Refunds worker" as API
+  }
+  node "Docker internal database network" {
+    database "db: PostgreSQL :5432" as DB
+    artifact "pgdata volume" as DATA
+    node "migrate: one-shot Prisma" as MIG
+  }
+  artifact ".env.production\nchmod 600" as ENV
+  artifact "caddy_data: TLS\nJSON logs có rotation" as LOG
+}
+node "GitHub Actions / GHCR" as CI
+cloud "VNPay Sandbox" as VN
+BROWSER --> DNS : domain
+DNS --> PROXY : HTTPS 443 / HTTP 80 redirect
+PROXY --> WEB : routes UI
+PROXY --> API : /api/* bỏ prefix
+API --> DB : Prisma / TCP5432
+DB -- DATA
+MIG --> DB : migration trước app
+API --> VN : outbound HTTPS QueryDR / refund
+VN --> PROXY : HTTPS IPN
+CI --> VPS : SSH22, image SHA, smoke HTTPS
+ENV ..> API
+ENV ..> MIG
+PROXY -- LOG
+note bottom of DB: Không publish DB/API port trên host.
+note bottom of CI
+Local: web3000, api3001, DB loopback5433.
+CI: DB _test riêng, unit/integration/E2E, build images.
+Production: secret server/CI; không có secret trong image.
+end note
+@enduml

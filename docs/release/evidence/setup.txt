@@ -1,0 +1,3 @@
+Disposable PostgreSQL ready
+Catalog 21 products, exactly one private admin, no demo users.
+Existing catalog overwrite blocked; duplicate admin blocked; repeat migration passed.

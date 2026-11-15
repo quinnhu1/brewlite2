@@ -2,7 +2,7 @@
 
 ## Demo theo đề BrewLite
 
-Assignment 2 chấp nhận thanh toán Ví/Thẻ giả lập. Dùng chế độ này để kiểm tra luồng đặt hàng và thanh toán. Đặt biến trong `apps/api/.env` nếu chạy NestJS trên máy, hoặc ở `.env` gốc nếu chạy Compose.
+Assignment 2 chấp nhận thanh toán Ví/Thẻ giả lập. Dùng chế độ này để kiểm tra luồng đặt hàng và thanh toán. Đặt biến trong `app/api/.env` nếu chạy NestJS trên máy, hoặc ở `.env` gốc nếu chạy Compose.
 
 ```dotenv
 PAYMENT_PROVIDER=mock
@@ -16,7 +16,7 @@ Khi chạy Compose, backend dùng `NODE_ENV=production`. Đặt thêm `PAYMENT_A
 Chạy frontend ở cổng 3000 và backend ở cổng 3001. Mở tunnel cho backend bằng `ngrok http 3001`. Dùng URL HTTPS mà ngrok cấp thay cho `https://your-api.ngrok-free.app`.
 
 ```dotenv
-# apps/api/.env hoặc .env gốc nếu chạy Compose
+# app/api/.env hoặc .env gốc nếu chạy Compose
 PAYMENT_PROVIDER=vnpay
 PAYMENT_MOCK_ALLOW_OVERRIDE=false
 PAYMENT_ALLOW_MOCK_IN_PRODUCTION=false
@@ -26,7 +26,7 @@ VNPAY_HASH_SECRET=<khoa-sandbox>
 VNPAY_RETURN_URL=https://your-api.ngrok-free.app/payments/vnpay/return
 ```
 
-Giữ `NEXT_PUBLIC_API_URL=http://localhost:3001` trong `apps/web/.env.local`, hoặc đặt ở `.env` gốc nếu chạy Compose. Thực hiện checkout từ `http://localhost:3000` trên máy chạy BrewLite để trình duyệt quay về đúng nơi đã đăng nhập.
+Giữ `NEXT_PUBLIC_API_URL=http://localhost:3001` trong `app/web/.env.local`, hoặc đặt ở `.env` gốc nếu chạy Compose. Thực hiện checkout từ `http://localhost:3000` trên máy chạy BrewLite để trình duyệt quay về đúng nơi đã đăng nhập.
 
 Đăng ký IPN `https://your-api.ngrok-free.app/payments/vnpay/ipn` với VNPay cho đúng merchant. ReturnUrl đưa trình duyệt về trang kết quả và cũng áp dụng kết quả đã ký khi IPN chưa tới; IPN vẫn là nguồn xác nhận chính. NestJS cũng có thể chủ động đối soát bằng QueryDR đã xác minh chữ ký. [Tích hợp PAY 2.1.0](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html)
 
@@ -49,6 +49,6 @@ Invoke-RestMethod "$api/payments/vnpay/ipn"
 
 ## Cho người khác truy cập
 
-Trình duyệt cần URL web và API mà thiết bị đó truy cập được. Đặt `FRONTEND_URL` thành origin HTTPS của web, `NEXT_PUBLIC_API_URL` thành URL HTTPS của API, rồi build lại Next.js. Nếu mở tunnel cho web trong chế độ `next dev`, điền hostname web vào `NEXT_DEV_ORIGINS` trong `apps/web/.env.local` và khởi động lại Next.js. IPN và ReturnUrl vẫn trỏ về API.
+Trình duyệt cần URL web và API mà thiết bị đó truy cập được. Đặt `FRONTEND_URL` thành origin HTTPS của web, `NEXT_PUBLIC_API_URL` thành URL HTTPS của API, rồi build lại Next.js. Nếu mở tunnel cho web trong chế độ `next dev`, điền hostname web vào `NEXT_DEV_ORIGINS` trong `app/web/.env.local` và khởi động lại Next.js. IPN và ReturnUrl vẫn trỏ về API.
 
 Assignment 2 yêu cầu URL frontend production qua HTTPS, URL API và health check hoạt động lúc chấm. Dùng một môi trường chạy liên tục cho đợt nghiệm thu. Tunnel từ laptop phụ thuộc máy và tiến trình ngrok đang chạy. Đặt PostgreSQL trong mạng riêng và giữ HashSecret ở backend. [Vòng đời ngrok Agent Endpoint](https://ngrok.com/docs/gateway/endpoints/agent-endpoints)

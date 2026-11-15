@@ -12,3 +12,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# deploy/backup.sh output when it is pointed at the repo by mistake
+backups/

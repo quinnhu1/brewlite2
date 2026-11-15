@@ -24,7 +24,6 @@ const config: Config = {
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
     'libs/**/*.(t|j)s',
-    'apps/**/*.(t|j)s',
   ],
   coverageDirectory: './coverage',
   testEnvironment: 'node',

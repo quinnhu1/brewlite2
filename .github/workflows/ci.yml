@@ -94,6 +94,15 @@ jobs:
         working-directory: app/web
         run: npm run build
 
+      - name: Validate deployment configuration
+        env:
+          IMAGE_TAG: "0000000000000000000000000000000000000000"
+        run: |
+          bash -n deploy/release.sh
+          bash -n deploy/backup.sh
+          node --check scripts/smoke.mjs
+          docker compose -f docker-compose.prod.yml --env-file deploy/env.example config >/dev/null
+
   images:
     name: Publish ${{ matrix.component }} image
     needs: verify
@@ -128,7 +137,7 @@ jobs:
           context: app/${{ matrix.component }}
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:3001' }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || '/api' }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ github.sha }}
             ${{ steps.image.outputs.name }}:main
@@ -173,6 +182,12 @@ jobs:
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/brewlite-deploy.tar.gz "$VPS_USER@$VPS_HOST:/opt/brewlite/incoming-$COMMIT_SHA.tar.gz"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
             "cd /opt/brewlite && tar -xzf incoming-$COMMIT_SHA.tar.gz && rm incoming-$COMMIT_SHA.tar.gz && bash deploy/release.sh $COMMIT_SHA"
+
+      - name: Smoke test the public site
+        if: vars.PRODUCTION_URL != ''
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: npm run test:smoke -- "$PRODUCTION_URL" "$PRODUCTION_URL/api"
 
       - name: Remove temporary deploy key
         if: always()

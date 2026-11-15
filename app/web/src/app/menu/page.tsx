@@ -39,6 +39,7 @@ function MenuContent() {
           image: getProductImageUrl(item.imageUrl),
           stock: item.stock,
           isBestSeller: item.isBestSeller,
+          bestSellerRank: item.bestSellerRank,
         }));
         setProducts(normalized);
       })
@@ -56,13 +57,22 @@ function MenuContent() {
   const defaultCategory = CATEGORY_TABS.find((category) => products.some((item) => CATEGORY_ALIASES[category]?.includes(item.category.trim().toLowerCase()))) ?? 'Classic Coffee';
   const activeCategory = searchParams.get('category') || (searchParams.get('search') ? 'All' : defaultCategory);
   const search = searchParams.get('search')?.trim().toLocaleLowerCase() ?? '';
-  const filteredProducts = useMemo(() => products.filter((product) => {
-    if(search && !product.name.toLocaleLowerCase().includes(search))return false;
-    if (activeCategory === 'All') return true;
-    if (activeCategory === 'Best Sellers') return Boolean(product.isBestSeller);
-    const aliases = CATEGORY_ALIASES[activeCategory] ?? [activeCategory.toLowerCase()];
-    return aliases.includes(product.category.toLowerCase());
-  }), [activeCategory, products, search]);
+  const filteredProducts = useMemo(() => {
+    const matches = products.filter((product) => {
+      if (search && !product.name.toLocaleLowerCase().includes(search)) return false;
+      if (activeCategory === 'All') return true;
+      if (activeCategory === 'Best Sellers') return Boolean(product.isBestSeller);
+      const aliases = CATEGORY_ALIASES[activeCategory] ?? [activeCategory.toLowerCase()];
+      return aliases.includes(product.category.toLowerCase());
+    });
+    if (activeCategory === 'Best Sellers') {
+      matches.sort((a, b) =>
+        (a.bestSellerRank ?? Number.MAX_SAFE_INTEGER) -
+        (b.bestSellerRank ?? Number.MAX_SAFE_INTEGER),
+      );
+    }
+    return matches;
+  }, [activeCategory, products, search]);
 
   const handleAddToCart = (payload: AddToCartPayload) => {
     addItem(payload);
@@ -123,7 +133,11 @@ function MenuContent() {
           filteredProducts.length === 0 ? (
             <div className="py-24 text-center">
               <p className="text-xl font-semibold">No items in {activeCategory} yet</p>
-              <p className="mt-2 text-sm text-[#715039]">Choose another category to browse the available menu.</p>
+              <p className="mt-2 text-sm text-[#715039]">
+                {activeCategory === 'Best Sellers' && !search
+                  ? 'Best Sellers appear once orders have been completed.'
+                  : 'Choose another category to browse the available menu.'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">

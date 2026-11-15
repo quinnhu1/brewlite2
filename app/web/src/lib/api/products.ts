@@ -8,6 +8,7 @@ export interface ApiProduct {
   stock: number;
   categories: string | null;
   isBestSeller?: boolean;
+  bestSellerRank?: number | null;
 }
 export interface ApiSize {
   size_id: string;

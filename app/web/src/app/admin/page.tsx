@@ -13,8 +13,10 @@ import {
   type AdminOrder,
 } from "@/lib/api/admin";
 import type { OrderDetail } from "@/lib/api/orders";
+import PaymentHistory from "@/components/orders/payment-history";
 import { OrderStatus } from "@/components/orders/order-status";
 import { getProductImageUrl } from "@/data/categories";
+import { clearLocalSession } from "@/lib/session";
 const money = (n: number) => n.toLocaleString("vi-VN") + "đ";
 export default function AdminPage() {
   const router = useRouter();
@@ -61,7 +63,7 @@ export default function AdminPage() {
     <div className="admin-page">
       <header className="admin-header">
         <Link className="brand" href="/">
-          <strong>Craft &amp; Grind</strong>
+          <strong>BrewLite</strong>
           <span>Every cup tells the story of the bean</span>
         </Link>
         <h1>ADMIN PORTAL</h1>
@@ -69,14 +71,20 @@ export default function AdminPage() {
           <span>ADMIN: {user.name}</span>
           <button
             className="ml-5 text-sm underline"
-            onClick={() => {
-              localStorage.removeItem("token");
-              localStorage.removeItem("user");
-              router.push("/signin");
+            onClick={async () => {
+              try {
+                await authApi.logout();
+                clearLocalSession(); router.replace("/signin");
+              } catch (e) {
+                if (e instanceof ApiError && e.status === 401) {
+                  clearLocalSession(); router.replace("/signin");
+                } else setError("Chưa đăng xuất được. Hãy kiểm tra mạng rồi thử lại.");
+              }
             }}
           >
-            Log out
+            Đăng xuất mọi phiên
           </button>
+          {error && <p role="alert" className="form-error">{error}</p>}
         </div>
       </header>
       <main className="admin-shell">
@@ -665,6 +673,12 @@ function Orders({ tracking }: { tracking: boolean }) {
                     <small className="mt-2 block">
                       {o.payment?.status ?? "unpaid"}
                     </small>
+                    {o.cancellation_requested_at &&
+                      o.status !== "CANCELLED" && (
+                        <strong className="block text-amber-800">
+                          Chờ hủy / hoàn tiền
+                        </strong>
+                      )}
                   </td>
                   <td>
                     <button
@@ -674,6 +688,7 @@ function Orders({ tracking }: { tracking: boolean }) {
                       Details
                     </button>
                     {tracking &&
+                      !o.cancellation_requested_at &&
                       ["PAID", "PREPARING", "READY"].includes(o.status) && (
                         <button
                           className="mt-3 rounded-full bg-[#715039] px-4 py-2 text-sm text-white"
@@ -744,23 +759,54 @@ function Orders({ tracking }: { tracking: boolean }) {
               Payment: {detail.payment?.status ?? "unpaid"} ·{" "}
               {detail.payment?.method}
             </p>
-            {["PAID", "PREPARING", "READY"].includes(detail.status) && (
+            <PaymentHistory order={detail} />
+            {(detail.actions.can_reconcile ||
+              detail.refunds.some((r) =>
+                [
+                  "requested",
+                  "processing",
+                  "review_required",
+                  "failed",
+                ].includes(r.status),
+              )) && (
               <button
-                className="coffee-button mt-7"
+                className="coffee-button my-4"
                 disabled={busy}
-                onClick={() => void advance(detail)}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    setDetail(await adminApi.reconcile(detail.order_id));
+                    setReload((n) => n + 1);
+                  } catch (e) {
+                    setError(
+                      e instanceof Error ? e.message : "Chưa đối soát được.",
+                    );
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
               >
-                {
-                  (
-                    {
-                      PAID: "Start preparing",
-                      PREPARING: "Mark ready",
-                      READY: "Complete",
-                    } as Record<string, string>
-                  )[detail.status]
-                }
+                Đối soát với VNPay / tải kết quả
               </button>
             )}
+            {!detail.cancellation_requested_at &&
+              ["PAID", "PREPARING", "READY"].includes(detail.status) && (
+                <button
+                  className="coffee-button mt-7"
+                  disabled={busy}
+                  onClick={() => void advance(detail)}
+                >
+                  {
+                    (
+                      {
+                        PAID: "Start preparing",
+                        PREPARING: "Mark ready",
+                        READY: "Complete",
+                      } as Record<string, string>
+                    )[detail.status]
+                  }
+                </button>
+              )}
           </section>
         </div>
       )}

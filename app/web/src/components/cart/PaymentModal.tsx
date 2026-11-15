@@ -2,8 +2,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api/auth";
-import { ordersApi, type CreateOrderBody } from "@/lib/api/orders";
-import { paymentsApi, type PaymentBody, type PaymentConfig } from "@/lib/api/payments";
+import {
+  ordersApi,
+  type CreateOrderBody,
+  type OrderDetail,
+} from "@/lib/api/orders";
+import {
+  paymentsApi,
+  type PaymentBody,
+  type PaymentConfig,
+} from "@/lib/api/payments";
+import { syncCheckoutWithOrder, openVnpay } from "@/lib/checkout/sync";
 import { ApiError } from "@/lib/api/client";
 import {
   useCartStore,
@@ -36,6 +45,7 @@ export default function PaymentModal({
 }: Props) {
   const router = useRouter();
   const saved = useCartStore((s) => s.checkout);
+  const [serverOrder, setServerOrder] = useState<OrderDetail | null>(null);
   const [config, setConfig] = useState<PaymentConfig | null>(null);
   const [method, setMethod] = useState<"momo" | "banking">("momo");
   const [userId, setUserId] = useState("");
@@ -44,7 +54,9 @@ export default function PaymentModal({
   const [address, setAddress] = useState("");
   const [note, setNote] = useState("");
   const [scheduled, setScheduled] = useState("");
-  const [channel, setChannel] = useState<PaymentBody["bank_code"] | "">("VNPAYQR");
+  const [channel, setChannel] = useState<
+    NonNullable<PaymentBody["bank_code"]> | ""
+  >("");
   const [outcome, setOutcome] = useState<"SUCCESS" | "FAILED">("SUCCESS");
   const [success, setSuccess] = useState<OrderConfirmationResult | null>(null);
   const [cardType, setCardType] = useState<"VNBANK" | "INTCARD">("VNBANK");
@@ -58,20 +70,34 @@ export default function PaymentModal({
   const [body, setBody] = useState<CreateOrderBody | null>(null);
   const submitting = useRef(false);
   const ownCheckout = saved?.userId === userId ? saved : null;
-  const chosenChannel = ownCheckout?.paymentBody ? (ownCheckout.paymentBody.bank_code ?? "") : channel;
+  const chosenChannel = ownCheckout?.paymentBody
+    ? (ownCheckout.paymentBody.bank_code ?? "")
+    : channel;
+  const cardSelected =
+    chosenChannel === "VNBANK" || chosenChannel === "INTCARD";
+  const displayedCardType = cardSelected ? chosenChannel : cardType;
 
   useEffect(() => {
     let active = true;
-    paymentsApi.config().then((value) => {
-      if (active) setConfig(value);
-    }).catch((reason: unknown) => {
-      if (active) setError(reason instanceof Error ? reason.message : "Không tải được phương thức thanh toán.");
-    });
+    paymentsApi
+      .config()
+      .then((value) => {
+        if (active) setConfig(value);
+      })
+      .catch((reason: unknown) => {
+        if (active)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Không tải được phương thức thanh toán.",
+          );
+      });
     authApi
       .me()
       .then((user) => {
         if (!active) return;
         setUserId(user.user_id);
+        useCartStore.getState().bindUser(user.user_id);
         setName(user.name);
         setPhone(user.phone);
       })
@@ -90,6 +116,29 @@ export default function PaymentModal({
       active = false;
     };
   }, [router]);
+  useEffect(() => {
+    if (!isOpen || !userId || saved?.userId !== userId || !saved.orderId)
+      return;
+    const id = saved.orderId;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const row = await ordersApi.one(id, controller.signal);
+        if (controller.signal.aborted) return;
+        syncCheckoutWithOrder(row);
+        setServerOrder(row);
+      } catch (e) {
+        if (!controller.signal.aborted)
+          setError(e instanceof Error ? e.message : "Không tải được đơn.");
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 10000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [isOpen, userId, saved?.userId, saved?.orderId]);
   if (!isOpen) return null;
 
   async function review() {
@@ -98,6 +147,12 @@ export default function PaymentModal({
     setError("");
     try {
       const payload: CreateOrderBody = {
+        ...(useCartStore.getState().replacementOrderId
+          ? {
+              replacement_of_order_id:
+                useCartStore.getState().replacementOrderId!,
+            }
+          : {}),
         items: selectedItems.map((i) => ({
           product_id: i.product_id,
           size: i.size,
@@ -128,7 +183,14 @@ export default function PaymentModal({
   }
 
   async function pay() {
-    if (submitting.current || !config || !config.configured || !userId || (!body && !ownCheckout)) return;
+    if (
+      submitting.current ||
+      !config ||
+      !config.configured ||
+      !userId ||
+      (!body && !ownCheckout)
+    )
+      return;
     submitting.current = true;
     setBusy(true);
     setError("");
@@ -183,10 +245,26 @@ export default function PaymentModal({
           "Giá vừa thay đổi. Vui lòng xem tổng mới và xác nhận thanh toán lại.",
         );
       }
+      const fresh = await ordersApi.one(order.order_id);
+      syncCheckoutWithOrder(fresh);
+      setServerOrder(fresh);
+      if (fresh.cancellation_requested_at)
+        throw new Error(fresh.message ?? "Đơn đang được hủy.");
+      if (fresh.actions.can_resume_payment && fresh.payment?.payment_url) {
+        openVnpay(fresh.payment.payment_url);
+        return;
+      }
+      if (!fresh.actions.can_retry_payment)
+        throw new Error(
+          "Đơn chưa thể thanh toán. Hãy mở trang trạng thái để kiểm tra.",
+        );
+      checkout = useCartStore.getState().checkout ?? checkout;
       const paymentBody: PaymentBody = checkout.paymentBody ?? {
         order_id: order.order_id,
         method: config.provider === "mock" ? method : "vnpay",
-        ...(config.provider === "vnpay" && channel ? { bank_code: channel } : {}),
+        ...(config.provider === "vnpay" && channel
+          ? { bank_code: channel }
+          : {}),
         ...(config.allow_simulate ? { simulate_result: outcome } : {}),
       };
       checkout = { ...checkout, paymentBody };
@@ -199,26 +277,53 @@ export default function PaymentModal({
         return;
       }
       if (result.payment_status === "failed") {
-        useCartStore
-          .getState()
-          .setCheckout({
-            ...checkout,
-            paymentKey: crypto.randomUUID(),
-            paymentBody: undefined,
-          });
+        useCartStore.getState().setCheckout({
+          ...checkout,
+          paymentKey: crypto.randomUUID(),
+          paymentBody: undefined,
+        });
+        const code = result.response_code
+          ? ` Mã VNPay ${result.response_code}.`
+          : "";
         throw new Error(
-          "Thanh toán không thành công. Giỏ hàng được giữ nguyên; bạn có thể thử lại đơn này.",
+          `Thanh toán không thành công.${code} Giỏ hàng vẫn được giữ để bạn thử lại.`,
         );
       }
       if (!result.payment_url)
         throw new Error(
           "Chưa nhận được đường dẫn thanh toán. Hãy kiểm tra trạng thái đơn.",
         );
-      const url = new URL(result.payment_url);
-      if (url.protocol !== "https:" || url.hostname !== "sandbox.vnpayment.vn")
-        throw new Error("Đường dẫn VNPay không hợp lệ.");
-      window.location.assign(url.toString());
+      openVnpay(result.payment_url);
     } catch (reason) {
+      const state = useCartStore.getState();
+      if (
+        reason instanceof ApiError &&
+        reason.status === 400 &&
+        !state.checkout?.orderId
+      ) {
+        state.setCheckout(null);
+      } else if (state.checkout?.orderId) {
+        try {
+          const fresh = await ordersApi.one(state.checkout.orderId);
+          syncCheckoutWithOrder(fresh);
+          setServerOrder(fresh);
+          if (
+            reason instanceof ApiError &&
+            reason.status === 400 &&
+            fresh.actions.can_retry_payment &&
+            state.checkout
+          )
+            useCartStore
+              .getState()
+              .setCheckout({
+                ...state.checkout,
+                paymentKey: crypto.randomUUID(),
+                paymentBody: undefined,
+              });
+        } catch {
+          /* Preserve uncertain request keys until the server can be reached. */
+        }
+      }
       setError(
         reason instanceof Error
           ? reason.message
@@ -237,17 +342,51 @@ export default function PaymentModal({
     try {
       // The original create response may have been lost. Replay its key to resolve it first.
       const order = await ordersApi.create(ownCheckout.body, ownCheckout.key);
-      await ordersApi.cancel(order.order_id);
-      useCartStore.getState().setCheckout(null);
-      setQuote(null);
-      setBody(null);
+      useCartStore.getState().setCheckout({ ...ownCheckout, orderId: order.order_id });
+      const cancelled = await ordersApi.cancel(order.order_id);
+      syncCheckoutWithOrder(cancelled);
+      setServerOrder(cancelled);
+      if (cancelled.status === "CANCELLED") {
+        setQuote(null);
+        setBody(null);
+      } else {
+        setError(cancelled.message ?? "Đã ghi nhận yêu cầu hủy.");
+        router.push(`/orders/${order.order_id}`);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Chưa hủy được đơn.");
     } finally {
       setBusy(false);
     }
   }
-  if(success)return <div className="checkout-overlay" role="dialog" aria-modal="true" aria-label="Successful order"><section className="checkout-panel text-center"><h2>Successful!</h2><p>Thank you for your order!</p><div className="my-12 space-y-6"><p className="rounded-xl border border-[#b79c87] p-4">Order ID: <strong>#{success.order_code}</strong></p><p className="rounded-xl border border-[#b79c87] p-4">Order status: <strong>Paid</strong></p></div><div className="checkout-actions"><button onClick={()=>router.push(`/orders/${success.order_id}`)}>TRACK ORDER</button><button onClick={()=>router.push('/')}>BACK TO HOME</button></div></section></div>;
+  if (success)
+    return (
+      <div
+        className="checkout-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Successful order"
+      >
+        <section className="checkout-panel text-center">
+          <h2>Successful!</h2>
+          <p>Thank you for your order!</p>
+          <div className="my-12 space-y-6">
+            <p className="rounded-xl border border-[#b79c87] p-4">
+              Order ID: <strong>#{success.order_code}</strong>
+            </p>
+            <p className="rounded-xl border border-[#b79c87] p-4">
+              Order status: <strong>Paid</strong>
+            </p>
+          </div>
+          <div className="checkout-actions">
+            <button onClick={() => router.push(`/orders/${success.order_id}`)}>
+              TRACK ORDER
+            </button>
+            <button onClick={() => router.push("/")}>BACK TO HOME</button>
+          </div>
+        </section>
+      </div>
+    );
   return (
     <div
       className="checkout-overlay"
@@ -318,6 +457,14 @@ export default function PaymentModal({
           </form>
         ) : (
           <div className="space-y-5">
+            {serverOrder?.message && (
+              <p role="status" className="rounded bg-amber-50 p-3">
+                {serverOrder.message}
+              </p>
+            )}
+            {body?.replacement_of_order_id && (
+              <p>Đơn thay thế: giá và tồn kho được kiểm tra lại.</p>
+            )}
             {ownCheckout && (
               <div className="rounded-xl bg-[#eae2da] p-4 text-sm">
                 Bạn có một lần đặt hàng chưa hoàn tất. Tiếp tục sẽ dùng lại đơn
@@ -328,7 +475,7 @@ export default function PaymentModal({
                   onClick={() => void cancelSaved()}
                   className="mt-2 underline"
                 >
-                  Hủy đơn chưa thanh toán để sửa giỏ hàng
+                  Yêu cầu hủy đơn để sửa giỏ hàng
                 </button>
               </div>
             )}
@@ -354,23 +501,121 @@ export default function PaymentModal({
               </dl>
             )}
             <p className="text-sm">
-              Đơn sẽ giữ hàng tối đa 20 phút trước khi thanh toán. Kết quả giao
-              dịch {config?.provider === "mock" ? "được giả lập cho bài tập, không trừ tiền thật." : "do VNPay xác nhận."}
+              Đơn chưa thanh toán được giữ hàng 20 phút. Giao dịch chưa rõ kết
+              quả cần đối soát trước khi trả kho. Kết quả giao dịch{" "}
+              {config?.provider === "mock"
+                ? "được giả lập cho bài tập, không trừ tiền thật."
+                : "do VNPay xác nhận."}
             </p>
-            {config?.provider === 'vnpay' && !config.configured && <p role="alert" className="form-error">VNPay Sandbox chưa được cửa hàng cấu hình. Hiện chưa thể thanh toán.</p>}
+            {config?.provider === "vnpay" && !config.configured && (
+              <p role="alert" className="form-error">
+                VNPay Sandbox chưa được cửa hàng cấu hình. Hiện chưa thể thanh
+                toán.
+              </p>
+            )}
             <div className="payment-choices">
-              {config?.provider === 'mock' ? ([{value:'momo',label:'E-Wallets (giả lập)'},{value:'banking',label:'Credit / Debit Card (giả lập)'}] as const).map(c=><label key={c.value} className={'payment-choice '+((ownCheckout?.paymentBody?.method??method)===c.value?'selected':'')}><input type="radio" name="method" checked={(ownCheckout?.paymentBody?.method??method)===c.value} disabled={busy||!!ownCheckout?.paymentBody} onChange={()=>setMethod(c.value)}/>{c.label}</label>) : ([{value:'VNPAYQR',label:'VietQR · VNPay QR'},{value:'',label:'E-Wallets · chọn tại VNPay'},{value:cardType,label:'Credit / Debit Card'}] as const).map(c=><label key={c.label} className={'payment-choice '+(chosenChannel===c.value?'selected':'')}><input type="radio" name="channel" checked={chosenChannel===c.value} disabled={busy||!!ownCheckout?.paymentBody} onChange={()=>setChannel(c.value)}/>{c.label}</label>)}
+              {config?.provider === "mock" &&
+                (
+                  [
+                    { value: "momo", label: "E-Wallets (giả lập)" },
+                    {
+                      value: "banking",
+                      label: "Credit / Debit Card (giả lập)",
+                    },
+                  ] as const
+                ).map(({ value, label }) => {
+                  const selected =
+                    (ownCheckout?.paymentBody?.method ?? method) === value;
+                  return (
+                    <label
+                      key={value}
+                      className={`payment-choice ${selected ? "selected" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="method"
+                        checked={selected}
+                        disabled={
+                          busy ||
+                          !!ownCheckout?.paymentBody ||
+                          serverOrder?.payment?.status === "pending"
+                        }
+                        onChange={() => setMethod(value)}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              {config?.provider === "vnpay" &&
+                (
+                  [
+                    { value: "", label: "Cổng VNPay · chọn phương thức" },
+                    { value: "VNPAYQR", label: "VNPay QR (Sandbox)" },
+                    { value: displayedCardType, label: "Thẻ ngân hàng" },
+                  ] as const
+                ).map(({ value, label }) => (
+                  <label
+                    key={label}
+                    className={`payment-choice ${chosenChannel === value ? "selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="channel"
+                      checked={chosenChannel === value}
+                      disabled={
+                        busy ||
+                        !!ownCheckout?.paymentBody ||
+                        serverOrder?.payment?.status === "pending"
+                      }
+                      onChange={() => setChannel(value)}
+                    />
+                    {label}
+                  </label>
+                ))}
             </div>
-            {config?.provider==='vnpay' && <>
-              {(channel==='VNBANK'||channel==='INTCARD')&&<label className="block text-sm">Loại thẻ <select aria-label="Loại thẻ" className="ml-3 rounded border p-2" value={cardType} disabled={busy||!!ownCheckout?.paymentBody} onChange={e=>{const v=e.target.value as 'VNBANK'|'INTCARD';setCardType(v);setChannel(v)}}><option value="VNBANK">ATM / tài khoản nội địa</option><option value="INTCARD">Thẻ quốc tế</option></select></label>}
-              <p className="text-sm">QR và biểu mẫu thẻ được hiển thị tại VNPay Sandbox. Nếu không có ví bạn muốn dùng, hãy chọn QR hoặc thẻ.</p>
-            </>}
+            {config?.provider === "vnpay" && (
+              <>
+                {cardSelected && (
+                  <label className="block text-sm">
+                    Loại thẻ
+                    <select
+                      className="ml-3 rounded border p-2"
+                      value={displayedCardType}
+                      disabled={
+                        busy ||
+                        !!ownCheckout?.paymentBody ||
+                        serverOrder?.payment?.status === "pending"
+                      }
+                      onChange={(event) => {
+                        const value =
+                          event.target.value === "INTCARD"
+                            ? "INTCARD"
+                            : "VNBANK";
+                        setCardType(value);
+                        setChannel(value);
+                      }}
+                    >
+                      <option value="VNBANK">ATM / tài khoản nội địa</option>
+                      <option value="INTCARD">Thẻ quốc tế</option>
+                    </select>
+                  </label>
+                )}
+                <p className="text-sm">
+                  VNPay Sandbox hiển thị các phương thức test được hỗ trợ cho
+                  merchant.
+                </p>
+              </>
+            )}
             {config?.allow_simulate && (
               <label className="block text-sm">
                 Kết quả thanh toán giả lập
                 <select
                   value={ownCheckout?.paymentBody?.simulate_result ?? outcome}
-                  disabled={busy || !!ownCheckout?.paymentBody}
+                  disabled={
+                    busy ||
+                    !!ownCheckout?.paymentBody ||
+                    serverOrder?.payment?.status === "pending"
+                  }
                   onChange={(e) =>
                     setOutcome(e.target.value as "SUCCESS" | "FAILED")
                   }
@@ -394,7 +639,12 @@ export default function PaymentModal({
               </button>
             )}
             <button
-              disabled={busy || !config?.configured}
+              disabled={
+                busy ||
+                !config?.configured ||
+                (!!serverOrder?.cancellation_requested_at &&
+                  serverOrder.status !== "CANCELLED")
+              }
               onClick={() => void pay()}
               className="w-full rounded-full bg-[#2b100c] p-3 font-bold text-white disabled:opacity-50"
             >

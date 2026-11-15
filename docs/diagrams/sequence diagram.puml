@@ -1,0 +1,110 @@
+@startuml
+
+autonumber
+skinparam style strictuml
+skinparam SequenceMessageAlign center
+skinparam ParticipantBackgroundColor #F8FAFC
+skinparam ParticipantBorderColor #0F172A
+skinparam ActorBackgroundColor #E2E8F0
+skinparam ActorBorderColor #0F172A
+
+actor "Customer" as Customer
+participant "Next.js UI" as UI
+participant "NestJS API" as API
+database "Database\n(PostgreSQL)" as DB
+participant "Payment Service\n(MoMo / VNPay / Card)" as PaymentGW
+
+== Giai đoạn 1: Tạo đơn hàng (UC4.1) ==
+
+Customer -> UI : Nhấn "Thanh toán" từ giỏ hàng
+activate UI
+
+UI -> API : POST /orders (Bearer JWT, cartItems)
+activate API
+
+API -> API : Xác thực JWT & Validate dữ liệu (DTO)
+API -> DB : BEGIN TRANSACTION\nKiểm tra tồn kho (Stock)
+activate DB
+DB --> API : Tồn kho hợp lệ
+API -> DB : Tạo bản ghi Order (status: PENDING) & OrderItems\nCOMMIT TRANSACTION
+DB --> API : Trả về orderId & tổng tiền tạm tính
+deactivate DB
+
+API --> UI : 201 Created (orderId, status: PENDING, total)
+deactivate API
+
+UI --> Customer : Hiển thị màn hình Thanh toán\n(Tóm tắt đơn & chọn Ví/Thẻ)
+deactivate UI
+
+== Giai đoạn 2: Áp dụng mã giảm giá - Luồng thay thế A1 (UC4.3 <<extend>>) ==
+
+opt Khách hàng nhập mã giảm giá
+  Customer -> UI : Nhập mã ưu đãi & nhấn "Áp dụng"
+  activate UI
+  UI -> API : POST /orders/:id/apply-promo (Bearer JWT, promoCode)
+  activate API
+  API -> DB : Kiểm tra điều kiện & hạn sử dụng Promotion
+  activate DB
+  DB --> API : Mã hợp lệ, cập nhật total mới cho Order
+  deactivate DB
+  API --> UI : 200 OK (newTotal, discountAmount)
+  deactivate API
+  UI --> Customer : Cập nhật hiển thị số tiền cần thanh toán
+  deactivate UI
+end
+
+== Giai đoạn 3: Thanh toán không tiền mặt & Idempotency (UC4.2) ==
+
+Customer -> UI : Chọn phương thức (Ví / Thẻ) & nhấn "Xác nhận trả"
+activate UI
+
+UI -> UI : Sinh mã duy nhất Idempotency-Key (UUID)
+UI -> API : POST /payments\n(Bearer JWT, Header: Idempotency-Key, orderId, method)
+activate API
+
+API -> API : Xác thực JWT & Validate payload
+
+API -> DB : Tìm giao dịch theo Idempotency-Key
+activate DB
+DB --> API : Kết quả tra cứu key
+deactivate DB
+
+alt Key đã tồn tại (Gửi trùng yêu cầu - Luồng thay thế A2)
+  API --> UI : 200 OK (Trả về kết quả giao dịch đã lưu trước đó)
+  UI --> Customer : Hiển thị kết quả đơn hàng (Không trừ tiền lần 2)
+
+else Key chưa tồn tại (Giao dịch mới)
+  API -> PaymentGW : Yêu cầu thanh toán (orderId, amount, method)
+  activate PaymentGW
+  PaymentGW -> PaymentGW : Xử lý thanh toán qua Ví điện tử / Thẻ
+  PaymentGW --> API : Trả về kết quả giao dịch (Success / Failed)
+  deactivate PaymentGW
+
+  alt Thanh toán thành công (Luồng chính)
+    API -> DB : BEGIN TRANSACTION
+    activate DB
+    API -> DB : Lưu bản ghi Payment & Idempotency-Key
+    API -> DB : Trừ tồn kho sản phẩm (Optimistic Locking)
+    API -> DB : Cập nhật Order status: PENDING -> PAID
+    API -> DB : Cộng điểm tích lũy (LoyaltyTransaction)
+    API -> DB : COMMIT TRANSACTION
+    DB --> API : Xác nhận lưu thành công
+    deactivate DB
+
+    API --> UI : 200 OK (orderId: #1042, status: PAID)
+    UI --> Customer : Chuyển màn hình Xác nhận đặt hàng thành công\n(Hiển thị mã đơn #1042 & trạng thái PAID)
+
+  else Thanh toán thất bại / Hủy giao dịch (Ngoại lệ E1, E2)
+    API -> DB : Cập nhật Order status: PAYMENT_FAILED (hoặc CANCELLED)\n& lưu log Payment thất bại
+    activate DB
+    DB --> API : Đã cập nhật trạng thái lỗi
+    deactivate DB
+
+    API --> UI : 402 Payment Required / 400 Bad Request (status: PAYMENT_FAILED)
+    deactivate API
+    UI --> Customer : Thông báo lỗi thanh toán, giữ nguyên đơn\n& hiển thị nút "Thử thanh toán lại"
+    deactivate UI
+  end
+end
+
+@enduml

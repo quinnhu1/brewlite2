@@ -6,19 +6,34 @@
 **/.next/
 **/dist/
 **/coverage/
+<<<<<<< HEAD
 playwright-report/
 test-results/
+=======
+>>>>>>> ab9761cc7d02821b6d9e2b0839f389b6ef485208
 
 # Local environment files
 .env
 .env.*
 !.env.example
+<<<<<<< HEAD
+=======
+backend/.env
+frontend/.env.local
+>>>>>>> ab9761cc7d02821b6d9e2b0839f389b6ef485208
 
 # Logs
 *.log
 npm-debug.log*
+<<<<<<< HEAD
 backups/
 
 # Operating system
 .DS_Store
 Thumbs.db
+=======
+
+# Operating system
+.DS_Store
+Thumbs.db
+>>>>>>> ab9761cc7d02821b6d9e2b0839f389b6ef485208

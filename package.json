@@ -2,6 +2,7 @@
   "name": "brewlite",
   "private": true,
   "scripts": {
+<<<<<<< HEAD
     "setup": "npm ci && npm --prefix apps/api ci && npm --prefix apps/web ci",
     "dev:api": "npm --prefix apps/api run start:dev",
     "dev:web": "npm --prefix apps/web run dev",
@@ -19,5 +20,10 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"
+=======
+    "dev:backend": "npm --prefix backend run start:dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "check": "npm --prefix backend run build && npm --prefix backend run lint && npm --prefix backend test -- --runInBand && npm --prefix frontend run lint && npm --prefix frontend run build"
+>>>>>>> ab9761cc7d02821b6d9e2b0839f389b6ef485208
   }
 }

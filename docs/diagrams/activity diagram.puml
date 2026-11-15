@@ -1,0 +1,98 @@
+@startuml
+!pragma teoz true
+skinparam conditionStyle diamond
+skinparam ConditionEndStyle diamond
+skinparam backgroundColor #FFFFFF
+skinparam SwimlaneBackgroundColor #FFFFFF
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #0F172A
+skinparam ActivityDiamondBackgroundColor #FEF3C7
+skinparam ActivityDiamondBorderColor #B45309
+skinparam SwimlaneBorderColor #64748B
+skinparam SwimlaneTitleBackgroundColor #FFFFFF
+
+|Khách hàng (Customer)|
+start
+:Mở ứng dụng BrewLite;
+:Xem danh sách đồ uống (Menu);
+
+repeat
+  repeat
+    :Chọn sản phẩm, kích cỡ (S/M/L) & topping;
+    :Thêm vào giỏ hàng;
+    :Xem giỏ hàng & tổng tiền;
+  repeat while ( ) is ([Mua thêm món]) not ([Tiến hành thanh toán])
+
+  :Nhấn nút "Thanh toán";
+
+  |Hệ thống BrewLite (Web & API)|
+  if ( ) then ([Chưa đăng nhập])
+    |Khách hàng (Customer)|
+    :Thực hiện Đăng nhập / Đăng ký;
+    |Hệ thống BrewLite (Web & API)|
+    :Xác thực thông tin;
+  else ([Đã có tài khoản hợp lệ])
+  endif
+
+  :Kiểm tra tồn kho & áp mã giảm giá;
+
+  if ( ) then ([Hết hàng])
+    :Thông báo sản phẩm hết hàng / không đủ số lượng;
+    |Khách hàng (Customer)|
+    :Cập nhật lại giỏ hàng;
+    ' Vòng lặp đưa khách hàng quay lại chọn lại sản phẩm
+  else ([Còn đủ hàng])
+    |Hệ thống BrewLite (Web & API)|
+    :Tạo đơn hàng (Trạng thái: PENDING);
+    break
+  endif
+repeat while ( )
+
+|Khách hàng (Customer)|
+:Chọn phương thức thanh toán (Ví điện tử / Thẻ);
+:Xác nhận thanh toán;
+
+|Hệ thống BrewLite (Web & API)|
+:Gửi yêu cầu thanh toán;
+
+|Cổng thanh toán (Payment Gateway)|
+:Xử lý giao dịch không tiền mặt;
+
+if ( ) then ([Thanh toán thất bại])
+  |Hệ thống BrewLite (Web & API)|
+  :Cập nhật trạng thái đơn: PAYMENT_FAILED;
+  :Giữ nguyên giỏ hàng & thông báo lỗi;
+  
+  |Khách hàng (Customer)|
+  if ( ) then ([Khách chọn thử lại])
+    :Quay lại chọn phương thức thanh toán;
+    detach
+  else ([Khách chọn hủy đơn])
+    |Hệ thống BrewLite (Web & API)|
+    :Cập nhật trạng thái đơn: CANCELLED;
+    stop
+  endif
+
+else ([Thanh toán thành công])
+  |Hệ thống BrewLite (Web & API)|
+  fork
+    :Cập nhật trạng thái đơn: PAID;
+  fork again
+    :Trừ số lượng tồn kho (Optimistic Locking);
+  fork again
+    :Cộng điểm thưởng (Loyalty Points);
+  fork again
+    :Hiển thị màn hình xác nhận & Mã đơn;
+  end fork
+  
+  :Cập nhật tiến độ pha chế;
+endif
+
+|Khách hàng (Customer)|
+:Theo dõi trạng thái & nhận đồ uống tại quầy;
+
+|Hệ thống BrewLite (Web & API)|
+:Hoàn tất đơn hàng (Trạng thái: COMPLETED);
+stop
+
+@enduml

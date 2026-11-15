@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Product {
+  productId        String             @id @default(dbgenerated("gen_random_uuid()")) @map("product_id") @db.Uuid
+  productName      String             @map("product_name") @db.VarChar(50)
+  description      String?
+  basePrice        Decimal            @map("base_price") @db.Decimal(10, 0)
+  imageUrl         String?            @map("image_url")
+  stock            Int                @default(0)
+  version          Int                @default(1)
+  isActive         Boolean            @default(true) @map("is_active")
+  categories       String?            @default("Tea") @db.VarChar(50)
+  order_items      order_items[]
+  product_size     product_size[]
+  product_toppings product_toppings[]
+
+  @@map("products")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model loyalty_transactions {
+  loyalty_id    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String            @db.Uuid
+  order_id      String?           @db.Uuid
+  loyalty_point Int
+  type          loyalty_type_enum
+  description   String?
+  created_at    DateTime          @default(now()) @db.Timestamptz(6)
+  orders        orders?           @relation(fields: [order_id], references: [order_id], onUpdate: NoAction)
+  users         users             @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_loyalty_order")
+  @@index([user_id], map: "idx_loyalty_user")
+}
+
+model order_item_toppings {
+  oit_id       String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderitem_id String      @db.Uuid
+  topping_id   String      @db.Uuid
+  topping_name String      @db.VarChar(50)
+  price        Decimal     @db.Decimal(10, 0)
+  order_items  order_items @relation(fields: [orderitem_id], references: [orderitem_id], onDelete: Cascade, onUpdate: NoAction)
+  toppings     toppings    @relation(fields: [topping_id], references: [topping_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  orderitem_id        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id            String                @db.Uuid
+  product_id          String                @db.Uuid
+  product_name        String                @db.VarChar(50)
+  size                String                @db.VarChar(2)
+  unit_price          Decimal               @db.Decimal(10, 0)
+  quantity            Int
+  line_total          Decimal               @db.Decimal(10, 0)
+  note                String?               @db.VarChar(500)
+  order_item_toppings order_item_toppings[]
+  orders              orders                @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
+  products            Product               @relation(fields: [product_id], references: [productId], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model orders {
+  order_id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_code           String                 @unique @db.VarChar(30)
+  user_id              String                 @db.Uuid
+  promotion_id         String?                @db.Uuid
+  status               order_status           @default(pending)
+  subtotal             Decimal                @db.Decimal(10, 0)
+  discount             Decimal                @default(0) @db.Decimal(10, 0)
+  total                Decimal                @db.Decimal(10, 0)
+  pickup_method        String?                @map("pickup_method") @db.VarChar(20)
+  customer_name        String?                @map("customer_name") @db.VarChar(100)
+  customer_phone       String?                @map("customer_phone") @db.VarChar(20)
+  delivery_address     String?                @map("delivery_address") @db.VarChar(500)
+  order_note           String?                @map("order_note") @db.VarChar(500)
+  scheduled_at         DateTime?              @map("scheduled_at") @db.Timestamptz(6)
+  checkout_key         String?                @unique @db.VarChar(255)
+  request_hash         String?                @db.VarChar(64)
+  stock_reserved       Boolean                @default(false)
+  expires_at           DateTime?              @db.Timestamptz(6)
+  created              DateTime               @default(now()) @db.Timestamptz(6)
+  loyalty_transactions loyalty_transactions[]
+  order_items          order_items[]
+  promotions           promotions?            @relation(fields: [promotion_id], references: [promotion_id], onUpdate: NoAction, map: "fk_orders_promotions")
+  users                users                  @relation(fields: [user_id], references: [user_id], onUpdate: NoAction, map: "fk_orders_users")
+  payments             payments[]
+
+  @@index([user_id, created])
+  @@index([status, expires_at])
+}
+
+model payments {
+  payment_id      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id        String              @db.Uuid
+  idempotency_key String              @unique @db.VarChar(255)
+  amount          Decimal             @db.Decimal(10, 0)
+  method          payment_method_enum
+  status          payment_status_enum
+  transaction_id  String?             @unique @db.VarChar(255)
+  paid_at         DateTime?           @db.Timestamptz(6)
+  created_at      DateTime            @default(now()) @db.Timestamptz(6)
+  request_hash    String?             @db.VarChar(64)
+  provider        String              @default("legacy") @db.VarChar(20)
+  gateway_ref     String?             @unique @db.VarChar(100)
+  payment_url     String?
+  expires_at      DateTime?           @db.Timestamptz(6)
+  bank_code       String?             @db.VarChar(20)
+  response_code   String?             @db.VarChar(2)
+  orders          orders              @relation(fields: [order_id], references: [order_id], onUpdate: NoAction)
+
+  @@index([order_id, created_at])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_size {
+  size_id    String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id String  @db.Uuid
+  size       String  @db.VarChar(2)
+  add_price  Decimal @default(0) @db.Decimal(7, 2)
+  products   Product @relation(fields: [product_id], references: [productId], map: "fk_product_size_products")
+
+  @@unique([product_id, size], map: "uq_product_size_product_size")
+}
+
+model product_toppings {
+  product_id String   @db.Uuid
+  topping_id String   @db.Uuid
+  products   Product  @relation(fields: [product_id], references: [productId], onDelete: Cascade, onUpdate: NoAction, map: "fk_pt_product")
+  toppings   toppings @relation(fields: [topping_id], references: [topping_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pt_topping")
+
+  @@id([product_id, topping_id], map: "pk_product_toppings")
+}
+
+model promotions {
+  promotion_id   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String             @unique @db.VarChar(50)
+  promotion_name String             @db.VarChar(100)
+  discount_type  discount_type_enum
+  discount_value Decimal            @db.Decimal(10, 0)
+  min_amount     Decimal            @default(0) @db.Decimal(10, 0)
+  max_discount   Decimal?           @db.Decimal(10, 0)
+  start_at       DateTime           @db.Timestamptz(6)
+  end_at         DateTime           @db.Timestamptz(6)
+  is_active      Boolean            @default(true)
+  orders         orders[]
+}
+
+model toppings {
+  topping_id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topping_name        String                @db.VarChar(50)
+  price               Decimal               @db.Decimal(10, 0)
+  is_active           Boolean               @default(true)
+  order_item_toppings order_item_toppings[]
+  product_toppings    product_toppings[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  user_id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String                 @db.VarChar(50)
+  phone                String                 @unique @db.VarChar(10)
+  password             String                 @db.VarChar(255)
+  point                Int                    @default(0)
+  email                String                 @db.VarChar(50)
+  role                 String                 @default("customer") @db.VarChar(20)
+  loyalty_transactions loyalty_transactions[]
+  orders               orders[]
+
+  @@index([email], map: "idx_users_email")
+}
+
+
+enum discount_type_enum {
+  percentage
+  fixed
+}
+
+enum loyalty_type_enum {
+  EARN
+  REDEEM
+  EXPIRE
+  ADJUST
+}
+
+enum order_status {
+  pending
+  paid
+  payment_failed
+  confirmed
+  processing
+  preparing
+  ready
+  shipping
+  delivering
+  completed
+  cancelled
+}
+
+enum payment_method_enum {
+  cash
+  momo
+  vnpay
+  banking
+}
+
+enum payment_status_enum {
+  pending
+  success
+  failed
+  refunded
+}

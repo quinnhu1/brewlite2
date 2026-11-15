@@ -1,8 +1,5 @@
-<<<<<<< HEAD:apps/api/src/admin/admin.service.ts
 import { PaymentsService } from '../payments/payments.service.js';
 import { RefundsService } from '../refunds/refunds.service.js';
-=======
->>>>>>> origin/main:app/api/src/admin/admin.service.ts
 import {
   BadRequestException,
   ConflictException,
@@ -18,11 +15,8 @@ export class AdminService {
   constructor(
     private readonly db: PrismaService,
     private readonly orders: OrdersService,
-<<<<<<< HEAD:apps/api/src/admin/admin.service.ts
     private readonly payments: PaymentsService,
     private readonly refunds: RefundsService,
-=======
->>>>>>> origin/main:app/api/src/admin/admin.service.ts
   ) {}
   async products(q = '', category = '', page = 1, active = '') {
     const where: Prisma.ProductWhereInput = {
@@ -188,10 +182,7 @@ export class AdminService {
     return {
       items: rows.map((o) => ({
         order_id: o.order_id,
-<<<<<<< HEAD:apps/api/src/admin/admin.service.ts
         cancellation_requested_at: o.cancellation_requested_at,
-=======
->>>>>>> origin/main:app/api/src/admin/admin.service.ts
         order_code: o.order_code,
         status: o.status.toUpperCase(),
         total: Number(o.total),
@@ -230,7 +221,6 @@ export class AdminService {
       order_note: o.order_note,
     };
   }
-<<<<<<< HEAD:apps/api/src/admin/admin.service.ts
   async reconcileOrder(id: string) {
     const o = await this.db.orders.findUnique({
       where: { order_id: id },
@@ -245,6 +235,4 @@ export class AdminService {
     for (const r of o.refunds) await this.refunds.process(r.refund_id, true);
     return this.order(id);
   }
-=======
->>>>>>> origin/main:app/api/src/admin/admin.service.ts
 }

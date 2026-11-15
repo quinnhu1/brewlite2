@@ -11,13 +11,11 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
+    "types": ["node", "jest"],
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": ".",
     "incremental": true,
-    // Global type packages. Without this list the editor type-checks the
-    // *.spec.ts files without jest's globals and reports `describe`/`it`.
-    "types": ["node", "jest"],
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false

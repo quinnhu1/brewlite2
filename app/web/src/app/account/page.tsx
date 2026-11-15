@@ -5,6 +5,7 @@ import Link from "next/link";
 import { authApi, type UserProfile } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import OrderList from "@/components/orders/order-list";
+import { clearLocalSession } from "@/lib/session";
 function AccountContent() {
   const router = useRouter(),
     params = useSearchParams();
@@ -13,6 +14,7 @@ function AccountContent() {
     [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
     [password, setPassword] = useState(""),
+    [currentPassword, setCurrentPassword] = useState(""),
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [saving, setSaving] = useState(false);
@@ -38,17 +40,31 @@ function AccountContent() {
   }, [router]);
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
     setError("");
     setStatus("");
+    if (password && !currentPassword.trim()) {
+      setError("Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu.");
+      return;
+    }
+    if (password && (!/(?=.*[A-Za-z])(?=.*\d)/.test(password) || password.length < 8)) {
+      setError("Mật khẩu mới phải có ít nhất 8 ký tự, gồm chữ cái và chữ số.");
+      return;
+    }
+    setSaving(true);
     try {
       const u = await authApi.profile({
         name,
         phone,
-        ...(password ? { password } : {}),
+        ...(password ? { password, current_password: currentPassword } : {}),
       });
+      if (password) {
+        clearLocalSession();
+        router.replace("/signin?password_changed=1");
+        return;
+      }
       setUser(u);
       setPassword("");
+      setCurrentPassword("");
       setStatus("Cập nhật thông tin thành công.");
       localStorage.setItem("user", JSON.stringify(u));
     } catch (e) {
@@ -125,16 +141,25 @@ function AccountContent() {
                 <input value={user.email} disabled />
               </label>
               <label>
-                New password (để trống nếu giữ nguyên)
+                Mật khẩu mới (ít nhất 8 ký tự, có chữ và số; để trống nếu giữ nguyên)
                 <input
                   type="password"
                   autoComplete="new-password"
-                  minLength={6}
+                  minLength={8}
                   maxLength={72}
+                  pattern="(?=.*[A-Za-z])(?=.*\d).*"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
+              {password && (
+                <label>
+                  Mật khẩu hiện tại (bắt buộc để xác nhận đổi mật khẩu)
+                  <input type="password" autoComplete="current-password"
+                    maxLength={72} value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)} />
+                </label>
+              )}
               {error && (
                 <p role="alert" className="form-error">
                   {error}
@@ -152,13 +177,21 @@ function AccountContent() {
                 <button
                   type="button"
                   className="coffee-button"
-                  onClick={() => {
-                    localStorage.removeItem("token");
-                    localStorage.removeItem("user");
-                    router.push("/signin");
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      await authApi.logout();
+                      clearLocalSession();
+                      router.replace("/signin");
+                    } catch (e) {
+                      if (e instanceof ApiError && e.status === 401) {
+                        clearLocalSession(); router.replace("/signin");
+                      } else setError("Chưa đăng xuất được trên máy chủ. Hãy kiểm tra mạng và thử lại.");
+                    } finally { setSaving(false); }
                   }}
                 >
-                  Log out
+                  Đăng xuất mọi phiên
                 </button>
               </div>
             </form>

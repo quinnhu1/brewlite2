@@ -1,0 +1,62 @@
+
+@startuml
+title BrewLite - UML Deployment Diagram
+top to bottom direction
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+node "Developer Machine\n(Local)" as local {
+  artifact "apps/web\nNext.js" as localWeb
+  artifact "apps/api\nNestJS" as localApi
+  database "Local PostgreSQL\nDocker Volume" as localDB
+}
+
+node "GitHub CI/CD" as ci {
+  artifact "Git Repository" as repo
+  component "GitHub Actions\nLint / Test / Build" as actions
+  node "GHCR\nContainer Registry" as registry
+}
+
+node "Customer Device" as device {
+  artifact "Browser / PWA" as browser
+}
+
+cloud "Production - Render" as prod {
+  node "Next.js Web Service" as web {
+    artifact "Frontend Application" as frontend
+  }
+
+  node "NestJS API Service" as api {
+    artifact "REST API\nGET /health" as backend
+  }
+
+  database "Managed PostgreSQL" as db {
+    artifact "Persistent Database Storage" as storage
+  }
+}
+
+cloud "External Payment Service\n(Mock)" as payment
+
+localWeb --> localApi : HTTP
+localApi --> localDB : TCP 5432
+
+repo --> actions : Push / PR
+actions --> registry : Push Docker Images\n(when configured)
+registry --> prod : Deploy Images\n(when configured)
+
+browser --> web : HTTPS 443
+web --> api : HTTPS 443
+api --> db : Private TCP 5432
+api --> payment : HTTPS 443
+
+note right of api
+  Environment Variables / Secrets
+  Health Check: GET /health
+  Application Logs
+end note
+
+note right of db
+  Persistent storage
+  Database not publicly exposed
+end note
+@enduml

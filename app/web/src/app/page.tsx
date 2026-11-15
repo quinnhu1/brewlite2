@@ -40,7 +40,7 @@ export default function HomePage() {
         <div className="hero-image">
           <Image
             src="/imghome/home1.png"
-            alt="Two Craft & Grind takeaway coffees"
+            alt="Two BrewLite takeaway coffees"
             fill
             priority
             sizes="(min-width: 900px) 52vw, 90vw"

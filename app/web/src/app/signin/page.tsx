@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AuthInput from "@/components/account/input";
 import { authApi } from "@/lib/api/auth";
+import { saveSession } from "@/lib/session";
 
 function SignInContent() {
   const router = useRouter();
@@ -13,7 +14,9 @@ function SignInContent() {
   const [loading, setLoading] = useState(false);
   const notice = searchParams.get("registered") === "1"
     ? "Đăng ký thành công! Hãy đăng nhập bằng email hoặc số điện thoại vừa đăng ký."
-    : "";
+    : searchParams.get("password_changed") === "1"
+      ? "Đã đổi mật khẩu và đăng xuất các phiên cũ. Hãy đăng nhập bằng mật khẩu mới."
+      : "";
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -33,10 +36,7 @@ function SignInContent() {
         throw new Error("Đăng nhập phản hồi thành công nhưng không có token. Vui lòng kiểm tra API backend.");
       }
 
-      localStorage.setItem("token", token);
-      if (res.user && typeof res.user === "object") {
-        localStorage.setItem("user", JSON.stringify(res.user));
-      }
+      saveSession(token, res.user);
 
       const next = searchParams.get("next");
       router.replace(res.user.role === "admin" && !next ? "/admin" : next?.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/account");

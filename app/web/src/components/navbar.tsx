@@ -6,6 +6,7 @@ import { Search, ShoppingCart, UserRound, X } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { authApi } from "@/lib/api/auth";
+import { SESSION_EVENT } from "@/lib/session";
 export default function Navbar() {
   const path = usePathname(),
     router = useRouter();
@@ -18,15 +19,17 @@ export default function Navbar() {
     [admin, setAdmin] = useState(false);
   useEffect(() => {
     let live = true;
-    if (localStorage.getItem("token"))
-      authApi
-        .me()
-        .then((u) => {
-          if (live) setAdmin(u.role === "admin");
-        })
-        .catch(() => {});
+    const refresh = () => {
+      const token = localStorage.getItem("token");
+      void (token ? authApi.me() : Promise.resolve(null))
+        .then((u) => { if (live && localStorage.getItem("token") === token) setAdmin(u?.role === "admin"); })
+        .catch(() => { if (live && localStorage.getItem("token") === token) setAdmin(false); });
+    };
+    refresh();
+    window.addEventListener(SESSION_EVENT, refresh);
     return () => {
       live = false;
+      window.removeEventListener(SESSION_EVENT, refresh);
     };
   }, [path]);
   if (path.startsWith("/admin")) return null;
@@ -34,7 +37,7 @@ export default function Navbar() {
     <header className="site-header">
       <div className="header-inner">
         <Link href="/" className="brand">
-          <strong>Craft &amp; Grind</strong>
+          <strong>BrewLite</strong>
           <span>Every cup tells the story of the bean</span>
         </Link>
         <div className="header-actions">

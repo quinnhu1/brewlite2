@@ -15,7 +15,7 @@ export default function Footer() {
         {/* Brand Logo & Tagline */}
         <div className="flex flex-col space-y-2 max-w-xs">
           <h2 className="text-xl md:text-2xl font-black tracking-wider uppercase text-white">
-            CRAFT &amp; GRIND
+            BREWLITE
           </h2>
           <p className="text-sm text-white font-normal leading-relaxed opacity-90">
             Every cup tells the story of the bean

@@ -1,37 +1,50 @@
-export type PaymentMethod = "vnpay" | "momo" | "banking";
-
-export type VnpayBankCode = "VNPAYQR" | "VNBANK" | "INTCARD";
-
-export type SimulateResult = "SUCCESS" | "FAILED";
-
-/** Request body for `POST /payments`. */
-export interface PaymentBody {
-  order_id: string;
-  method: PaymentMethod;
-  bank_code?: VnpayBankCode;
-  simulate_result?: SimulateResult;
-}
-
-/** Response from `POST /payments`. */
+import { apiRequest } from "./client";
 export interface PaymentResult {
   payment_id: string;
-  reference: string;
+  order_id: string;
+  order_code: string;
   payment_status: string;
   order_status: string;
   provider: string;
-  method: string;
+  response_code?: string | null;
   amount: number;
-  payment_url: string | null;
   transaction_id: string | null;
-  response_code: string | null;
   paid_at: string | null;
+  idempotency_key: string;
+  reference: string | null;
+  payment_url: string | null;
+  expires_at: string | null;
+  message?: string;
 }
-
-/** Response from `GET /payments/config`. */
 export interface PaymentConfig {
-  provider: string;
+  provider: "mock" | "vnpay";
   configured: boolean;
-  methods: PaymentMethod[];
   channels: string[];
+  methods: ("vnpay" | "momo" | "banking")[];
   allow_simulate: boolean;
 }
+export interface PaymentBody {
+  order_id: string;
+  method: "vnpay" | "momo" | "banking";
+  bank_code?: "VNPAYQR" | "VNBANK" | "INTCARD";
+  simulate_result?: "SUCCESS" | "FAILED";
+}
+export const paymentsApi = {
+  config: () => apiRequest<PaymentConfig>("/payments/config"),
+  create: (body: PaymentBody, key: string) =>
+    apiRequest<PaymentResult>("/payments", {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: JSON.stringify(body),
+    }),
+  byReference: (ref: string, signal?: AbortSignal) =>
+    apiRequest<PaymentResult>(
+      `/payments/reference/${encodeURIComponent(ref)}`,
+      { signal },
+    ),
+  reconcile: (id: string, signal?: AbortSignal) =>
+    apiRequest<PaymentResult>(`/payments/${encodeURIComponent(id)}/reconcile`, {
+      method: "POST",
+      signal,
+    }),
+};

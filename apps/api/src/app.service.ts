@@ -1,4 +1,3 @@
-<<<<<<< HEAD:apps/api/src/app.service.ts
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service.js';
 
@@ -18,13 +17,4 @@ export class AppService {
     }
     return { status: 'ok' };
   }
-=======
-import { Injectable } from '@nestjs/common';
-
-@Injectable()
-export class AppService {
-  getHello(): string {
-    return 'Hello World!';
-  }
->>>>>>> origin/main:app/api/src/app.service.ts
 }

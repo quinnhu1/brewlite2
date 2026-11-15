@@ -1,7 +1,9 @@
-# JetBrains
+# IDE files
 .idea/
 
-<<<<<<< HEAD
+# Dependencies
+**/node_modules/
+
 # Build output
 *.tsbuildinfo
 **/.next/
@@ -26,19 +28,3 @@ Thumbs.db
 
 !.env.production.example
 .deploy/
-=======
-# OS files
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Local env files never belong in git
-.env
-.env.local
-.env.*.local
-
-# deploy/backup.sh output when it is pointed at the repo by mistake
-backups/
->>>>>>> origin/main

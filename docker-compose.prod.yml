@@ -1,4 +1,5 @@
 name: brewlite
+<<<<<<< HEAD
 x-api-env: &api-env
   NODE_ENV: production
   PORT: 3001
@@ -78,10 +79,113 @@ services:
       DOMAIN: ${DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
     ports: ["80:80", "443:443", "443:443/udp"]
+=======
+
+# Production stack for the BrewLite VPS (ADR-003): PostgreSQL, NestJS, Next.js
+# and Caddy terminating TLS. Images are published by .github/workflows/ci.yml
+# and pinned to a commit SHA; deploy/release.sh sets IMAGE_TAG per release.
+#
+# Only Caddy publishes ports. The API and web containers are reachable only
+# inside the compose network, and the browser talks to the API through
+# https://<domain>/api.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?add POSTGRES_USER to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?add POSTGRES_PASSWORD to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?add POSTGRES_DB to .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:?add GITHUB_REPOSITORY to .env}-api:${IMAGE_TAG:?IMAGE_TAG comes from deploy/release.sh}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:?add DATABASE_URL to .env}
+      DIRECT_URL: ${DIRECT_URL:?add DIRECT_URL to .env}
+      JWT_SECRET: ${JWT_SECRET:?add JWT_SECRET to .env}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-604800}
+      # The browser calls the web origin (/api), so CORS allows that origin.
+      FRONTEND_URL: ${FRONTEND_URL:?add FRONTEND_URL to .env}
+      # Caddy is exactly one hop in front of the API.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      ORDER_EXPIRY_WORKER: ${ORDER_EXPIRY_WORKER:-true}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-vnpay}
+      PAYMENT_ALLOW_MOCK_IN_PRODUCTION: ${PAYMENT_ALLOW_MOCK_IN_PRODUCTION:-false}
+      PAYMENT_MOCK_ALLOW_OVERRIDE: ${PAYMENT_MOCK_ALLOW_OVERRIDE:-false}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-}
+      VNPAY_QUERY_IP: ${VNPAY_QUERY_IP:-}
+    expose:
+      - "3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    image: ghcr.io/${GITHUB_REPOSITORY:?add GITHUB_REPOSITORY to .env}-web:${IMAGE_TAG:?IMAGE_TAG comes from deploy/release.sh}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?add PUBLIC_DOMAIN to .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+>>>>>>> origin/main
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+<<<<<<< HEAD
     networks: [edge]
     depends_on:
       api: {condition: service_healthy}
@@ -91,6 +195,9 @@ networks:
   edge:
   database:
     internal: true
+=======
+
+>>>>>>> origin/main
 volumes:
   pgdata:
   caddy_data:

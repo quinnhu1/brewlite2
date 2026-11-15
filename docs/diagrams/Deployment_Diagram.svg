@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BrewLite deployment diagram (ADR-003).
+  Nguồn chỉnh sửa: deployment.mmd (Mermaid). Bản SVG này vẽ tay theo đúng nguồn
+  để không phụ thuộc công cụ render khi nộp bài.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="700" viewBox="0 0 1080 700" role="img" aria-labelledby="title desc">
+  <title id="title">Kiến trúc triển khai BrewLite</title>
+  <desc id="desc">GitHub Actions build image lên GHCR; VPS Ubuntu chạy Caddy, Next.js, NestJS và PostgreSQL trong Docker Compose.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrow-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8250df"/>
+    </marker>
+    <style>
+      .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.5; }
+      .box-gh { fill: #f6f8fa; }
+      .box-vps { fill: #f0f7ff; stroke: #9cc7f5; }
+      .box-accent { fill: #fff8e6; stroke: #d4a72c; }
+      .box-db { fill: #eef7ee; stroke: #7bc47f; }
+      .group { fill: none; stroke: #8c959f; stroke-width: 1.5; stroke-dasharray: 6 4; }
+      .t { font-family: ui-sans-serif, "Segoe UI", Arial, sans-serif; fill: #1f2328; }
+      .strong { font-size: 13px; font-weight: 600; }
+      .muted { font-size: 11.5px; fill: #57606a; }
+      .label { font-size: 11px; fill: #57606a; }
+      .flow { stroke: #57606a; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #8250df; stroke-width: 1.8; fill: none; stroke-dasharray: 7 5; marker-end: url(#arrow-dash); }
+    </style>
+  </defs>
+
+  <text x="40" y="44" class="t" font-size="22" font-weight="700">BrewLite — kiến trúc triển khai (ADR-003)</text>
+  <text x="40" y="66" class="t muted">Một domain, Caddy giữ TLS, image bất biến theo commit SHA</text>
+
+  <!-- ===================== GitHub ===================== -->
+  <rect class="group" x="20" y="80" width="300" height="360" rx="14"/>
+  <text x="36" y="106" class="t strong">GitHub</text>
+
+  <rect class="box box-gh" x="36" y="122" width="268" height="44" rx="8"/>
+  <text x="50" y="143" class="t strong">Pull request / push main</text>
+  <text x="50" y="159" class="t muted">một pipeline, ba job</text>
+
+  <rect class="box box-gh" x="36" y="190" width="268" height="60" rx="8"/>
+  <text x="50" y="211" class="t strong">Actions · verify</text>
+  <text x="50" y="228" class="t muted">lint · build · unit · migrate · seed · e2e</text>
+  <text x="50" y="243" class="t muted">validate deploy scripts + compose</text>
+
+  <rect class="box box-gh" x="36" y="274" width="268" height="60" rx="8"/>
+  <text x="50" y="295" class="t strong">Actions · images</text>
+  <text x="50" y="312" class="t muted">build api + web, bật bằng</text>
+  <text x="50" y="327" class="t muted">vars.PUBLISH_IMAGES</text>
+
+  <rect class="box box-gh" x="36" y="358" width="268" height="60" rx="8"/>
+  <text x="50" y="379" class="t strong">GHCR</text>
+  <text x="50" y="396" class="t muted">brewlite2-api:&lt;sha&gt;</text>
+  <text x="50" y="411" class="t muted">brewlite2-web:&lt;sha&gt;</text>
+
+  <line class="flow" x1="170" y1="166" x2="170" y2="190"/>
+  <line class="flow" x1="170" y1="250" x2="170" y2="274"/>
+  <line class="flow" x1="170" y1="334" x2="170" y2="358"/>
+
+  <rect class="box box-accent" x="20" y="470" width="300" height="64" rx="8"/>
+  <text x="34" y="492" class="t strong">Actions · deploy (SSH)</text>
+  <text x="34" y="509" class="t muted">environment production, cần</text>
+  <text x="34" y="524" class="t muted">vars.DEPLOY_ENABLED = true</text>
+  <line class="flow" x1="170" y1="418" x2="170" y2="470"/>
+
+  <!-- ===================== Người dùng ===================== -->
+  <rect class="box" x="630" y="20" width="190" height="54" rx="8"/>
+  <text x="725" y="42" class="t strong" text-anchor="middle">Trình duyệt</text>
+  <text x="725" y="60" class="t muted" text-anchor="middle">https://&lt;domain&gt;</text>
+  <line class="flow" x1="725" y1="74" x2="725" y2="160"/>
+  <text x="735" y="120" class="label">HTTPS</text>
+
+  <!-- ===================== VPS ===================== -->
+  <rect class="group box-vps" stroke-dasharray="0" x="460" y="110" width="580" height="500" rx="16"/>
+  <text x="480" y="138" class="t strong">VPS Ubuntu 24.04 · docker-compose.prod.yml</text>
+
+  <rect class="box" x="600" y="160" width="250" height="66" rx="8"/>
+  <text x="725" y="183" class="t strong" text-anchor="middle">Caddy</text>
+  <text x="725" y="201" class="t muted" text-anchor="middle">:80 :443 · TLS tự cấp/gia hạn</text>
+  <text x="725" y="217" class="t muted" text-anchor="middle">HTTP → HTTPS (308)</text>
+
+  <rect class="box" x="500" y="280" width="210" height="76" rx="8"/>
+  <text x="605" y="303" class="t strong" text-anchor="middle">web · Next.js</text>
+  <text x="605" y="321" class="t muted" text-anchor="middle">:3000 · expose nội bộ</text>
+  <text x="605" y="338" class="t muted" text-anchor="middle">NEXT_PUBLIC_API_URL=/api</text>
+
+  <rect class="box" x="770" y="280" width="210" height="76" rx="8"/>
+  <text x="875" y="303" class="t strong" text-anchor="middle">api · NestJS</text>
+  <text x="875" y="321" class="t muted" text-anchor="middle">:3001 · expose nội bộ</text>
+  <text x="875" y="338" class="t muted" text-anchor="middle">GET /health</text>
+
+  <rect class="box box-db" x="630" y="400" width="230" height="66" rx="8"/>
+  <text x="745" y="423" class="t strong" text-anchor="middle">db · PostgreSQL 16</text>
+  <text x="745" y="441" class="t muted" text-anchor="middle">không publish cổng</text>
+  <text x="745" y="457" class="t muted" text-anchor="middle">volume pgdata</text>
+
+  <!-- Caddy → web / api -->
+  <polyline class="flow" points="690,226 690,252 605,252 605,280"/>
+  <text x="628" y="246" class="label">/*</text>
+  <polyline class="flow" points="760,226 760,252 875,252 875,280"/>
+  <text x="790" y="246" class="label">/api/* (bỏ prefix)</text>
+
+  <!-- api → db -->
+  <polyline class="flow" points="860,356 860,378 800,378 800,400"/>
+
+  <!-- /opt/brewlite -->
+  <rect class="box" x="500" y="486" width="500" height="88" rx="8"/>
+  <text x="516" y="509" class="t strong">/opt/brewlite</text>
+  <text x="516" y="528" class="t muted">.env (chmod 600) · docker-compose.prod.yml · deploy/</text>
+  <text x="516" y="546" class="t muted">backups/brewlite-&lt;stamp&gt;.sql.gz (giữ 7 ngày)</text>
+  <text x="516" y="564" class="t muted">.last-good-tag (tag để rollback) · volumes: pgdata, caddy_data</text>
+
+  <!-- ===================== CI/CD arrows ===================== -->
+  <line class="dash" x1="304" y1="388" x2="460" y2="388"/>
+  <text x="312" y="380" class="label">docker pull &lt;sha&gt;</text>
+
+  <line class="dash" x1="320" y1="502" x2="460" y2="502"/>
+  <text x="326" y="494" class="label">ssh + release.sh</text>
+
+  <!-- ===================== Chú giải ===================== -->
+  <line x1="40" y1="648" x2="92" y2="648" stroke="#57606a" stroke-width="1.8"/>
+  <text x="102" y="652" class="t muted">truy cập runtime</text>
+  <line x1="230" y1="648" x2="282" y2="648" stroke="#8250df" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <text x="292" y="652" class="t muted">CI/CD: artifact và deploy</text>
+  <text x="470" y="652" class="t muted">release.sh: pull → backup → migrate → up -d → health → rollback</text>
+</svg>

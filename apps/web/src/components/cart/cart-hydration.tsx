@@ -1,4 +1,5 @@
 "use client";
+<<<<<<< HEAD:apps/web/src/components/cart/cart-hydration.tsx
 import { useEffect } from "react";
 import { useCartStore } from "@/store/useCartStore";
 import { authApi } from "@/lib/api/auth";
@@ -37,5 +38,20 @@ export default function CartHydration() {
       window.removeEventListener("storage", storage);
     };
   }, []);
+=======
+
+import { useEffect } from "react";
+import { useCartStore } from "@/store/useCartStore";
+
+/**
+ * Rehydrates the persisted cart after mount. The store opts into
+ * `skipHydration` so the server-rendered markup matches the empty cart.
+ */
+export default function CartHydration() {
+  useEffect(() => {
+    void useCartStore.persist.rehydrate();
+  }, []);
+
+>>>>>>> origin/main:app/web/src/components/cart/cart-hydration.tsx
   return null;
 }

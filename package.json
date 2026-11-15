@@ -1,7 +1,8 @@
-{
+﻿{
   "name": "brewlite",
   "private": true,
   "scripts": {
+<<<<<<< HEAD
     "setup": "npm ci && npm --prefix apps/api ci && npm --prefix apps/web ci",
     "dev:api": "npm --prefix apps/api run start:dev",
     "dev:web": "npm --prefix apps/web run dev",
@@ -20,5 +21,13 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"
+=======
+    "dev:backend": "npm --prefix app/api run start:dev",
+    "dev:frontend": "npm --prefix app/web run dev",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "check": "npm --prefix app/api run build && npm --prefix app/api run lint && npm --prefix app/api test -- --runInBand && npm --prefix app/web run lint && npm --prefix app/web run build",
+    "test:smoke": "node scripts/smoke.mjs"
+>>>>>>> origin/main
   }
 }

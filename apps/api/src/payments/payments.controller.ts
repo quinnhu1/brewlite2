@@ -10,12 +10,12 @@ import {
   Query,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiHeader } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
-import { JwtAuthGuard, type AuthUser } from '../auth/jwt-auth.guard.js';
+import type { AuthUser } from '../auth/jwt-auth.guard.js';
+import { Public } from '../auth/public.decorator.js';
 import { requireIdempotencyKey } from '../common/idempotency.js';
 import { CreatePaymentDto } from './dto/create-payment.dto.js';
 import { PaymentsService } from './payments.service.js';
@@ -25,6 +25,7 @@ import { extractParams, verify } from './vnpay.js';
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
+  @Public()
   @Get('config')
   config() {
     return this.payments.getConfig();
@@ -40,7 +41,6 @@ export class PaymentsController {
   })
   @HttpCode(200)
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreatePaymentDto,
@@ -54,11 +54,13 @@ export class PaymentsController {
       req.ip ?? '127.0.0.1',
     );
   }
+  @Public()
   @Get('vnpay/ipn')
   ipn(@Query() query: Record<string, unknown>) {
     return this.payments.ipn(query);
   }
 
+  @Public()
   @Get('vnpay/return')
   returnUrl(@Query() query: Record<string, unknown>, @Res() res: Response) {
     const target = new URL(
@@ -78,7 +80,6 @@ export class PaymentsController {
   }
   @Get('reference/:ref')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   byReference(@CurrentUser() user: AuthUser, @Param('ref') ref: string) {
     return this.payments.byReference(user.user_id, ref);
   }
@@ -86,7 +87,6 @@ export class PaymentsController {
   @Post(':id/reconcile')
   @HttpCode(200)
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   reconcile(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,

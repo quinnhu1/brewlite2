@@ -1,0 +1,141 @@
+@startuml
+
+skinparam style strictuml
+skinparam classAttributeIconSize 0
+skinparam ClassBackgroundColor #F8FAFC
+skinparam ClassBorderColor #0F172A
+skinparam EnumBackgroundColor #FEF3C7
+skinparam EnumBorderColor #B45309
+skinparam ArrowColor #334155
+
+' ==================== ENUMS ====================
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+enum DrinkSize {
+  S
+  M
+  L
+}
+
+enum PaymentMethod {
+  E_WALLET
+  BANK_CARD
+}
+
+enum PaymentStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+}
+
+' ==================== CLASSES ====================
+
+class User {
+  + id : UUID
+  + email : String
+  + passwordHash : String
+  + fullName : String
+  + loyaltyPoints : Int
+  + createdAt : DateTime
+}
+
+class Product {
+  + id : UUID
+  + name : String
+  + description : String
+  + basePrice : Decimal
+  + imageUrl : String
+  + stock : Int
+  + version : Int
+  + isAvailable : Boolean
+}
+
+class Order {
+  + id : UUID
+  + orderCode : String
+  + userId : UUID
+  + promotionId : UUID
+  + status : OrderStatus
+  + subTotal : Decimal
+  + discountAmount : Decimal
+  + total : Decimal
+  + createdAt : DateTime
+  + updatedAt : DateTime
+}
+
+class OrderItem {
+  + id : UUID
+  + orderId : UUID
+  + productId : UUID
+  + size : DrinkSize
+  + toppings : String[]
+  + unitPrice : Decimal
+  + qty : Int
+  + lineTotal : Decimal
+}
+
+class Payment {
+  + id : UUID
+  + orderId : UUID
+  + idempotencyKey : String
+  + amount : Decimal
+  + method : PaymentMethod
+  + status : PaymentStatus
+  + providerTxId : String
+  + createdAt : DateTime
+}
+
+class Promotion {
+  + id : UUID
+  + code : String
+  + discountType : String
+  + discountValue : Decimal
+  + minOrderValue : Decimal
+  + validFrom : DateTime
+  + validTo : DateTime
+  + usageLimit : Int
+  + usedCount : Int
+  + isActive : Boolean
+}
+
+class LoyaltyTransaction {
+  + id : UUID
+  + userId : UUID
+  + orderId : UUID
+  + type : LoyaltyTransactionType
+  + points : Int
+  + description : String
+  + createdAt : DateTime
+}
+
+' ==================== RELATIONSHIPS ====================
+
+User "1" --> "0..*" Order : places >
+Order "1" *-- "1..*" OrderItem : contains >
+Product "1" <-- "0..*" OrderItem : references <
+Order "1" --> "0..*" Payment : paid via >
+Promotion "0..1" <-- "0..*" Order : applied to <
+User "1" --> "0..*" LoyaltyTransaction : earns/redeems >
+Order "1" --> "0..1" LoyaltyTransaction : generates >
+
+Order ..> OrderStatus
+OrderItem ..> DrinkSize
+Payment ..> PaymentMethod
+Payment ..> PaymentStatus
+LoyaltyTransaction ..> LoyaltyTransactionType
+
+@enduml

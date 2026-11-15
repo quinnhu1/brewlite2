@@ -1,3 +1,17 @@
+<<<<<<< HEAD
+=======
+# Local development database only.
+#
+#   npm run db:up      # docker compose up -d db
+#   npm run db:down
+#
+# The API connects with:
+#   postgresql://brewlite:<password>@localhost:5433/brewlite?schema=public
+#
+# Production runs everything through docker-compose.prod.yml (see deploy/).
+name: brewlite
+
+>>>>>>> origin/main
 services:
   db:
     image: postgres:16
@@ -17,6 +31,7 @@ services:
       timeout: 5s
       retries: 10
 
+<<<<<<< HEAD
   backend:
     profiles: ["app"]
     build: ./apps/api
@@ -59,5 +74,7 @@ services:
       backend:
         condition: service_healthy
 
+=======
+>>>>>>> origin/main
 volumes:
   brewlite_pgdata:

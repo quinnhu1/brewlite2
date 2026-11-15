@@ -171,10 +171,18 @@ model users {
   point                Int                    @default(0)
   email                String                 @db.VarChar(50)
   role                 String                 @default("customer") @db.VarChar(20)
+  /// Incremented on password change so every previously issued JWT is rejected.
+  token_version        Int                    @default(0)
+  /// Brute-force protection; reset on a successful login.
+  failed_login_count   Int                    @default(0)
+  locked_until         DateTime?              @db.Timestamptz(6)
   loyalty_transactions loyalty_transactions[]
   orders               orders[]
 
   @@index([email], map: "idx_users_email")
+  // `users_email_lower_key` (unique lower(email)) and `users_role_check` are
+  // created in migration 20261102000000_checkout_integrity because Prisma
+  // cannot express expression indexes or CHECK constraints in the schema.
 }
 
 

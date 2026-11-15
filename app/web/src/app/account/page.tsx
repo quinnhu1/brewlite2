@@ -13,6 +13,7 @@ function AccountContent() {
     [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
     [password, setPassword] = useState(""),
+    [currentPassword, setCurrentPassword] = useState(""),
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [saving, setSaving] = useState(false);
@@ -38,17 +39,23 @@ function AccountContent() {
   }, [router]);
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
     setError("");
     setStatus("");
+    if (password && !currentPassword) {
+      setError("Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu.");
+      return;
+    }
+    setSaving(true);
     try {
       const u = await authApi.profile({
         name,
         phone,
+        currentPassword,
         ...(password ? { password } : {}),
       });
       setUser(u);
       setPassword("");
+      setCurrentPassword("");
       setStatus("Cập nhật thông tin thành công.");
       localStorage.setItem("user", JSON.stringify(u));
     } catch (e) {
@@ -125,11 +132,22 @@ function AccountContent() {
                 <input value={user.email} disabled />
               </label>
               <label>
-                New password (để trống nếu giữ nguyên)
+                Mật khẩu hiện tại (chỉ cần khi đổi mật khẩu)
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  maxLength={200}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </label>
+              <label>
+                Mật khẩu mới (ít nhất 8 ký tự, có chữ và số; để trống nếu giữ
+                nguyên)
                 <input
                   type="password"
                   autoComplete="new-password"
-                  minLength={6}
+                  minLength={8}
                   maxLength={72}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

@@ -12,7 +12,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { AdminService } from './admin.service.js';
@@ -24,7 +23,7 @@ function pageNumber(raw = '1') {
 }
 @ApiTags('admin')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
   constructor(

@@ -17,7 +17,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator.js';
-import { JwtAuthGuard, type AuthUser } from '../auth/jwt-auth.guard.js';
+import type { AuthUser } from '../auth/jwt-auth.guard.js';
 import { StaffGuard } from '../auth/staff.guard.js';
 import { requireIdempotencyKey } from '../common/idempotency.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -30,7 +30,6 @@ class UpdateStatusDto {
 
 @ApiTags('orders')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}

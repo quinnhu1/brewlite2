@@ -11,7 +11,22 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExcludeEndpoint,
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  ApiAuthRequired,
+  ApiConflict,
+  ApiIdempotencyKey,
+  ApiNotFound,
+  ApiValidationError,
+} from '../common/api-docs.js';
+import { PaymentConfigDto, PaymentResponseDto } from './dto/payment-response.dto.js';
 import type { Request, Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthUser } from '../auth/jwt-auth.guard.js';
@@ -27,6 +42,8 @@ export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
   @Public()
   @Get('config')
+  @ApiOperation({ summary: 'Cấu hình thanh toán đang bật (mock hoặc VNPay) để frontend chọn kênh' })
+  @ApiOkResponse({ type: PaymentConfigDto })
   config() {
     return this.payments.getConfig();
   }
@@ -34,6 +51,21 @@ export class PaymentsController {
   @Post()
   @HttpCode(200)
   @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Thanh toán một đơn',
+    description:
+      'Mock: trả kết quả ngay (Ví/Thẻ giả lập). VNPay: trả payment_url, kết quả chỉ được ghi khi IPN hoặc QueryDR có chữ ký hợp lệ. Số tiền luôn lấy từ đơn trong DB.',
+  })
+  @ApiIdempotencyKey('thanh toán')
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @ApiAuthRequired()
+  @ApiValidationError('Idempotency-Key cần 8–200 ký tự chữ, số, _, ., :, hoặc -.')
+  @ApiConflict(
+    'Đơn đã trả, hết hạn giữ hàng, đang có giao dịch chờ, hoặc key đã dùng cho yêu cầu khác.',
+    'Đơn không còn ở trạng thái chờ thanh toán.',
+  )
+  @ApiNotFound('Không tìm thấy đơn hàng.')
+  @ApiServiceUnavailableResponse({ description: 'Chưa cấu hình VNPay hoặc mock bị tắt ở production.' })
   create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreatePaymentDto,
@@ -49,12 +81,17 @@ export class PaymentsController {
   }
   @Public()
   @Get('vnpay/ipn')
+  @ApiOperation({
+    summary: 'IPN từ VNPay (server-to-server)',
+    description: 'Chỉ VNPay gọi. Kiểm chữ ký, TmnCode, số tiền; callback lặp không cộng tiền/điểm lần hai.',
+  })
   ipn(@Query() query: Record<string, unknown>) {
     return this.payments.ipn(query);
   }
 
   @Public()
   @Get('vnpay/return')
+  @ApiExcludeEndpoint()
   returnUrl(@Query() query: Record<string, unknown>, @Res() res: Response) {
     const target = new URL(
       '/payment/result',
@@ -73,6 +110,10 @@ export class PaymentsController {
   }
   @Get('reference/:ref')
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Tra giao dịch theo mã tham chiếu (trang kết quả sau khi về từ VNPay)' })
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @ApiAuthRequired()
+  @ApiNotFound('Không tìm thấy giao dịch.')
   byReference(@CurrentUser() user: AuthUser, @Param('ref') ref: string) {
     return this.payments.byReference(user.user_id, ref);
   }
@@ -80,6 +121,10 @@ export class PaymentsController {
   @Post(':id/reconcile')
   @HttpCode(200)
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Đối soát giao dịch đang chờ bằng QueryDR có chữ ký' })
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @ApiAuthRequired()
+  @ApiServiceUnavailableResponse({ description: 'VNPay không phản hồi hoặc chữ ký phản hồi sai: trạng thái giữ nguyên.' })
   reconcile(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,

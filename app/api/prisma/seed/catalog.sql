@@ -1,6 +1,7 @@
 -- BrewLite catalog v2. Database schema is managed by Prisma migrations.
 -- 21 products: 18 drinks with S/M/L + compatible toppings; 3 pastries with one standard portion.
--- Demo admin/customer passwords are bcrypt hashes; see README for local demo credentials.
+-- PRODUCTION-SAFE: products, sizes, toppings and promotions only. NO user accounts are created here.
+-- Local/test demo accounts live in prisma/seed/demo-users.sql (npm run db:seed:demo); never run that on production.
 -- No invented orders, gateway transactions, or loyalty entries.
 BEGIN;
 INSERT INTO public.products (product_id,product_name,description,base_price,image_url,stock,version,is_active,categories) VALUES
@@ -158,9 +159,5 @@ INSERT INTO public.promotions (promotion_id,code,promotion_name,discount_type,di
 ('c3333333-3333-4333-8333-000000000002','BREW15K','Giảm 15.000đ cho đơn từ 100.000đ','fixed',15000,100000,15000,'2025-12-31 17:00:00+00','2029-12-31 17:00:00+00',true)
 ON CONFLICT(code) DO UPDATE SET discount_type=EXCLUDED.discount_type,discount_value=EXCLUDED.discount_value,min_amount=EXCLUDED.min_amount,max_discount=EXCLUDED.max_discount,start_at=EXCLUDED.start_at,end_at=EXCLUDED.end_at,is_active=EXCLUDED.is_active;
 
-INSERT INTO public.users (user_id,name,phone,password,point,email,role) VALUES
-('c4444444-4444-4444-8444-000000000001','BrewLite Admin','0900000000','$2b$10$/3KJjEKSc9o0eGkUyU8tzepce08qT44m7K4zd1pzpxYdmmkCc3QQC',0,'admin@brewlite.local','admin'),
-('c4444444-4444-4444-8444-000000000002','Demo Customer','0900000001','$2b$10$/3KJjEKSc9o0eGkUyU8tzepce08qT44m7K4zd1pzpxYdmmkCc3QQC',0,'demo@brewlite.local','customer')
-ON CONFLICT(user_id) DO NOTHING;
 
 COMMIT;

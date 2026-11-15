@@ -7,7 +7,8 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiAuthRequired, ApiConflict, ApiValidationError } from '../common/api-docs.js';
 import { RateLimit, RateLimitGuard } from '../common/rate-limit.guard.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
@@ -26,6 +27,9 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @ApiOperation({ summary: 'Đăng ký tài khoản khách (role luôn là customer)' })
+  @ApiValidationError('phone phải gồm 10 chữ số và bắt đầu bằng 0.')
+  @ApiConflict('Trùng số điện thoại hoặc email.', 'Số điện thoại hoặc email đã được sử dụng.')
   @RateLimit({ limit: 5, windowMs: 10 * 60_000 })
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
@@ -34,6 +38,8 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Đăng nhập bằng email hoặc số điện thoại, nhận accessToken (Bearer)' })
+  @ApiAuthRequired()
   @RateLimit({ limit: 10, windowMs: 60_000 })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
@@ -41,6 +47,7 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth()
+  @ApiAuthRequired()
   me(@CurrentUser() user: AuthUser) {
     return user;
   }

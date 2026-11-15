@@ -24,7 +24,7 @@ if (!(Test-Path app/web/.env.local)) { Copy-Item app/web/.env.example app/web/.e
 
 npm run db:up                                   # docker compose up -d db
 npm --prefix app/api run db:migrate
-npm --prefix app/api run db:seed
+npm --prefix app/api run db:seed:demo           # catalog + 2 tài khoản demo (chỉ local)
 ```
 
 Mở hai terminal ở thư mục gốc.
@@ -52,7 +52,16 @@ volume `brewlite_brewlite_pgdata`. Khi dựng thử stack production ở máy, l
 project khác (ví dụ `-p brewlite-trial`), nếu không Compose sẽ nhận nhầm container
 và volume của môi trường dev.
 
-Seed local cung cấp tài khoản `admin@brewlite.local` và `demo@brewlite.local` với mật khẩu mẫu `BrewLite@2026!`. Đơn demo ở trạng thái `COMPLETED` mới được tính vào Best Sellers. Tài khoản này chỉ dùng cho local; production phải tạo admin với mật khẩu riêng.
+Có hai lệnh seed:
+
+| Lệnh | Nạp gì | Dùng ở đâu |
+| --- | --- | --- |
+| `npm run db:seed` (= `prisma db seed`) | Chỉ catalog: món, size, topping, khuyến mãi (`prisma/seed/catalog.sql`). Không tạo tài khoản. | Production, CI, test |
+| `npm run db:seed:demo` | Catalog + `prisma/seed/demo-users.sql` | Chỉ máy local và buổi demo |
+
+`db:seed:demo` tạo `admin@brewlite.local` và `demo@brewlite.local` với mật khẩu mẫu `BrewLite@2026!`. File này tự từ chối chạy nếu DB đã có admin thật (email không thuộc `@brewlite.local`). Đơn demo ở trạng thái `COMPLETED` mới được tính vào Best Sellers.
+
+`prisma/reset-demo-data.sql` và `prisma/reset-and-seed.sql` là lệnh **xóa dữ liệu**, chỉ dùng ở local qua script PowerShell có sao lưu trước. Không bao giờ chạy trên production.
 
 ## Kiểm thử
 

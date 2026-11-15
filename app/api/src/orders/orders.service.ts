@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 
 import { fingerprint, lockKey, lockOrder } from '../common/idempotency.js';
+import { RefundsService } from '../refunds/refunds.service.js';
 import { assertTransition } from './order-state.js';
 import type { order_status } from '@prisma/client';
 
@@ -33,7 +34,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
   }
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly refunds: RefundsService,
+  ) {}
 
   async createOrder(
     userId: string,
@@ -349,7 +353,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
               products: { select: { imageUrl: true } },
             },
           },
-          payments: { orderBy: { created_at: 'desc' }, take: 1 },
+          payments: {
+            orderBy: { created_at: 'desc' },
+            take: 1,
+            include: { refunds: true },
+          },
         },
       }),
       this.prisma.orders.count({ where: { user_id: userId } }),
@@ -372,7 +380,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             products: { select: { imageUrl: true } },
           },
         },
-        payments: { orderBy: { created_at: 'desc' }, take: 1 },
+        payments: {
+          orderBy: { created_at: 'desc' },
+          take: 1,
+          include: { refunds: true },
+        },
       },
     });
     if (!row) throw new NotFoundException('Không tìm thấy đơn hàng.');
@@ -388,7 +400,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             products: { select: { imageUrl: true } };
           };
         };
-        payments: true;
+        payments: { include: { refunds: true } };
       };
     }>,
   ) {
@@ -429,6 +441,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             paid_at: last.paid_at,
           }
         : null,
+      // Receipt of the full refund (mock/free cancel). Null when nothing was refunded.
+      refund: last?.refunds
+        ? RefundsService.toCustomerReceipt(last.refunds)
+        : null,
     };
   }
 
@@ -464,12 +480,25 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         include: { payments: true },
       });
       if (!order) throw new NotFoundException('Không tìm thấy đơn hàng.');
-      if (order.status === 'cancelled') return this.summary(order);
+      if (order.status === 'cancelled') {
+        // Replay of an earlier cancel: return the same receipt, never a second refund.
+        const earlier = await tx.refunds.findFirst({
+          where: { order_id: id },
+          orderBy: { requested_at: 'desc' },
+        });
+        return {
+          ...this.summary(order),
+          refund: earlier ? RefundsService.toCustomerReceipt(earlier) : null,
+        };
+      }
       // A gateway may still be processing money. Never release stock based on a browser cancel.
       if (order.payments.some((p) => p.status === 'pending'))
         throw new ConflictException(
           'Giao dịch đang chờ VNPay xác nhận. Chưa thể hủy đơn.',
         );
+      let receipt: Awaited<
+        ReturnType<RefundsService['refundInternalPayment']>
+      > | null = null;
       if (order.status === 'paid') {
         const charged = order.payments.find((p) => p.status === 'success');
         if (!charged || !['mock', 'free', 'demo'].includes(charged.provider))
@@ -478,6 +507,13 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           );
         assertTransition(order.status, 'cancelled');
         // A mock refund is an internal atomic operation; it never claims to refund an external bank.
+        // The receipt is written in this same transaction, under the order lock taken above.
+        receipt = await this.refunds.refundInternalPayment(tx, {
+          order_id: id,
+          payment: charged,
+          requested_by: userId,
+          reason: 'CUSTOMER_CANCEL',
+        });
         await tx.payments.update({
           where: { payment_id: charged.payment_id },
           data: { status: 'refunded' },
@@ -516,12 +552,14 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         assertTransition(order.status, 'cancelled');
       }
       await this.releaseStock(tx, id);
-      return this.summary(
-        await tx.orders.update({
-          where: { order_id: id },
-          data: { status: 'cancelled' },
-        }),
-      );
+      const cancelled = await tx.orders.update({
+        where: { order_id: id },
+        data: { status: 'cancelled' },
+      });
+      return {
+        ...this.summary(cancelled),
+        refund: receipt ? RefundsService.toCustomerReceipt(receipt) : null,
+      };
     });
   }
 

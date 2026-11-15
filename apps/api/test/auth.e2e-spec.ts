@@ -44,6 +44,7 @@ describe('auth with PostgreSQL (fixed API contract)', () => {
     );
     await app.init();
     db = app.get(PrismaService);
+    await db.auth_rate_limits.deleteMany();
   });
 
   afterAll(async () => {

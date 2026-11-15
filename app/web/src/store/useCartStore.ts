@@ -60,10 +60,15 @@ function priced(item: CartItem): CartItem {
   };
 }
 interface CartState {
+  ownerUserId: string | null;
+  bindUser: (userId: string) => void;
+  clearSession: () => void;
   items: CartItem[];
   pickupMethod: PickupMethod;
   promotionCode: string;
   checkout: Checkout | null;
+  replacementOrderId: string | null;
+  setReplacementOrderId: (id: string | null, userId: string) => void;
   addItem: (item: CartPayload) => void;
   updateQuantity: (id: string, delta: number) => void;
   removeItem: (id: string) => void;
@@ -79,10 +84,24 @@ interface CartState {
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
+      ownerUserId: null,
+      bindUser: (userId) => set((s) => {
+        if (s.ownerUserId === userId) return s;
+        // A guest cart can be adopted. An authenticated cart must never cross accounts.
+        if (!s.ownerUserId && !s.checkout && !s.replacementOrderId)
+          return { ownerUserId: userId };
+        return { ownerUserId: userId, items: [], checkout: null, replacementOrderId: null,
+          promotionCode: "", pickupMethod: "AT_COUNTER" };
+      }),
+      clearSession: () => set({ ownerUserId: null, items: [], checkout: null,
+        replacementOrderId: null, promotionCode: "", pickupMethod: "AT_COUNTER" }),
       items: [],
       pickupMethod: "AT_COUNTER",
       promotionCode: "",
       checkout: null,
+      replacementOrderId: null,
+      setReplacementOrderId: (replacementOrderId, userId) =>
+        set((s) => s.ownerUserId === userId ? { replacementOrderId } : s),
       addItem: (payload) =>
         set((state) => {
           const id = buildCartItemKey(payload);
@@ -123,7 +142,8 @@ export const useCartStore = create<CartState>()(
       setPickupMethod: (pickupMethod) => set({ pickupMethod }),
       setPromotionCode: (promotionCode) =>
         set({ promotionCode: promotionCode.trim().toUpperCase() }),
-      setCheckout: (checkout) => set({ checkout }),
+      setCheckout: (checkout) => set((s) =>
+        !checkout || checkout.userId === s.ownerUserId ? { checkout } : s),
       finishCheckout: (orderId) =>
         set((s) => {
           if (s.checkout?.orderId !== orderId) return s;
@@ -132,6 +152,7 @@ export const useCartStore = create<CartState>()(
           );
           return {
             checkout: null,
+            replacementOrderId: null,
             promotionCode: "",
             items: s.items.flatMap((i) => {
               const quantity = i.quantity - (bought.get(i.cart_item_id) ?? 0);
@@ -174,6 +195,11 @@ export const useCartStore = create<CartState>()(
         })),
       getTotalBadgeCount: () => get().items.reduce((s, i) => s + i.quantity, 0),
     }),
-    { name: "brewlite-cart-v3", skipHydration: true },
+    {
+      name: "brewlite-cart-v3", version: 1, skipHydration: true,
+      // Old snapshots have no trustworthy account owner. Server orders remain available in history.
+      migrate: () => ({ ownerUserId: null, items: [], checkout: null,
+        replacementOrderId: null, promotionCode: "", pickupMethod: "AT_COUNTER" }),
+    },
   ),
 );

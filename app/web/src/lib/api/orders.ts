@@ -1,3 +1,5 @@
+import { apiRequest } from "./client";
+
 export type OrderSize = "S" | "M" | "L";
 
 export type PickupMethod = "AT_COUNTER" | "TAKEAWAY" | "DELIVERY";
@@ -70,3 +72,15 @@ export interface CreateOrderBody {
   order_note?: string;
   scheduled_at?: string;
 }
+
+export interface OrderPage {
+  items: OrderDetail[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export const ordersApi = {
+  /** Order history for the signed-in customer, newest first. */
+  mine: (page = 1) => apiRequest<OrderPage>(`/orders/me?page=${page}`),
+};

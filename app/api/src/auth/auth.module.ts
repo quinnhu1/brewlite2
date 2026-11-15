@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { RateLimitGuard } from '../common/rate-limit.guard.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AdminGuard } from './admin.guard.js';
 import { AuthController } from './auth.controller.js';
@@ -23,7 +25,15 @@ import { StaffGuard } from './staff.guard.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, AdminGuard, StaffGuard],
+  providers: [
+    AuthService,
+    JwtAuthGuard,
+    AdminGuard,
+    StaffGuard,
+    RateLimitGuard,
+    // Deny by default: every route needs a bearer token unless it is @Public().
+    { provide: APP_GUARD, useExisting: JwtAuthGuard },
+  ],
   exports: [AuthService, JwtAuthGuard, AdminGuard, StaffGuard],
 })
 export class AuthModule {}

@@ -43,8 +43,8 @@ export default function SignUpPage() {
 
         <AuthInput label="Email" name="email" type="email" placeholder="you@example.com" required autoComplete="email" />
         <AuthInput label="Full name" name="name" placeholder="Your full name" required autoComplete="name" />
-        <AuthInput label="Phone number" name="phone" type="tel" placeholder="0901234567" required autoComplete="tel" />
-        <AuthInput label="Password (at least 6 characters)" name="password" type="password" placeholder="Create a password" required minLength={6} autoComplete="new-password" />
+        <AuthInput label="Phone number" name="phone" type="tel" placeholder="0901234567" required pattern="0[0-9]{9}" maxLength={10} autoComplete="tel" />
+        <AuthInput label="Password (at least 8 characters, letters and numbers)" name="password" type="password" placeholder="Create a password" required minLength={8} maxLength={72} pattern="(?=.*[A-Za-z])(?=.*\d).*" autoComplete="new-password" />
 
         <button
           type="submit"

@@ -52,6 +52,7 @@ suite('checkout with PostgreSQL', () => {
     process.env.DIRECT_URL = url;
     process.env.JWT_SECRET = 'integration-test-only-long-secret';
     process.env.ORDER_EXPIRY_WORKER = 'false';
+    process.env.AUTH_RATE_LIMIT_MAX = '1000';
     process.env.VNPAY_TMN_CODE = 'TESTCODE';
     process.env.VNPAY_HASH_SECRET = 'integration-test-secret';
     process.env.VNPAY_RETURN_URL =

@@ -4,9 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { IS_PUBLIC_KEY } from './public.decorator.js';
 
 /** The authenticated user attached to the request by JwtAuthGuard. */
 export interface AuthUser {
@@ -20,14 +22,31 @@ export interface AuthUser {
 
 export type AuthenticatedRequest = Request & { user?: AuthUser };
 
+interface TokenPayload {
+  sub?: string;
+  /** Mirrors users.token_version so password changes revoke old tokens. */
+  ver?: number;
+}
+
+/**
+ * Global guard: every route needs a valid bearer token unless it is marked
+ * with `@Public()`. Role checks live in AdminGuard/StaffGuard.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const header = request.headers.authorization;
     const token = header?.startsWith('Bearer ')
@@ -36,13 +55,15 @@ export class JwtAuthGuard implements CanActivate {
 
     if (!token) throw new UnauthorizedException('Cần đăng nhập.');
 
-    let payload: { sub?: string };
+    let payload: TokenPayload;
     try {
-      payload = await this.jwt.verifyAsync<{ sub?: string }>(token);
+      payload = await this.jwt.verifyAsync<TokenPayload>(token, {
+        algorithms: ['HS256'],
+      });
     } catch {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
     }
-    if (!payload?.sub) {
+    if (!payload?.sub || typeof payload.ver !== 'number') {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
     }
 
@@ -57,11 +78,16 @@ export class JwtAuthGuard implements CanActivate {
         phone: true,
         role: true,
         point: true,
+        token_version: true,
       },
     });
     if (!user) throw new UnauthorizedException('Tài khoản không tồn tại.');
+    if (user.token_version !== payload.ver) {
+      throw new UnauthorizedException('Phiên đăng nhập đã hết hiệu lực.');
+    }
 
-    request.user = user;
+    const { token_version: _tokenVersion, ...profile } = user;
+    request.user = profile;
     return true;
   }
 }

@@ -23,6 +23,22 @@ export interface RegisterBody {
   password: string;
 }
 
+export interface UpdateProfileBody {
+  name?: string;
+  phone?: string;
+}
+
+export interface ChangePasswordBody {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ProfileBody extends UpdateProfileBody {
+  /** New password; when present `currentPassword` is required too. */
+  password?: string;
+  currentPassword?: string;
+}
+
 function persist(session: AuthSession) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem("token", session.accessToken);
@@ -46,6 +62,34 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify(body),
     }).then(persist),
+
+  /**
+   * Updates the profile and, when a new password is supplied, rotates it.
+   * The API invalidates every old token, so the freshly issued one is stored.
+   */
+  profile: async (body: ProfileBody) => {
+    const { password, currentPassword, ...fields } = body;
+    let user = await apiRequest<UserProfile>("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    });
+
+    if (password) {
+      const session = await apiRequest<AuthSession>("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword: currentPassword ?? "",
+          newPassword: password,
+        }),
+      });
+      persist(session);
+      user = session.user;
+    } else if (typeof window !== "undefined") {
+      window.localStorage.setItem("user", JSON.stringify(user));
+    }
+
+    return user;
+  },
 
   /** Client-side sign out; the API does not keep a session. */
   logout: () => {

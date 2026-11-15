@@ -16,6 +16,15 @@ Mẫu:
 - Ghi chú: ...
 ```
 
+## Chưa phát hành — chứng từ hoàn tiền, Swagger, seed, kiểm thử (Đức Long)
+
+- Migration: có — `20261115120000_add_refunds` (thêm bảng `refunds`, enum `refund_status_enum`; không sửa bảng cũ).
+- Hủy đơn PAID mock/free tạo một chứng từ hoàn trong cùng transaction; API `GET /orders/:id/refund`, `GET /admin/orders/:id/refund`; chi tiết đơn có trường `refund`.
+- Swagger: DTO có mô tả đầy đủ, header `idempotency-key` cho tạo đơn/thanh toán, ví dụ lỗi 400/401/409.
+- Seed: `prisma db seed` chỉ nạp catalog (an toàn cho production); tài khoản demo chuyển sang `npm run db:seed:demo`.
+- Kiểm thử: thêm test theo mã API-MENU-01, INT-PRICE-01/02, INT-QTY-01, INT-IDEM-02, INT-CANCEL-01, INT-REFUND-01/02, INT-PROMO-01. Kết quả: xem `docs/testing/test-results.md`.
+- Rollback: migration chỉ thêm bảng; bản cũ của API vẫn chạy được trên DB đã migrate.
+
 ## Chưa phát hành — tài liệu kiến trúc và vận hành
 
 Chưa deploy lên VPS. Thay đổi trong repo:

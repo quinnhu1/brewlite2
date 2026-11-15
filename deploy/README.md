@@ -66,9 +66,10 @@ tương thích schema trước khi rollback.
 
 ```bash
 cd /opt/brewlite
-# 1. Release sẽ tự migrate; sau khi xong, nạp catalog + tạo admin riêng:
+# 1. Release sẽ tự migrate; sau khi xong, nạp catalog (chỉ món/topping/khuyến mãi, không có tài khoản):
 docker compose -f docker-compose.prod.yml run --rm --no-deps api npx prisma db seed
-# 2. Tạo tài khoản admin với mật khẩu riêng (không dùng tài khoản demo).
+# 2. Đăng ký tài khoản trên web rồi nâng quyền admin bằng UPDATE (xem docs/deployment.md).
+#    Không chạy prisma/seed/demo-users.sql trên production.
 # 3. Các lần sau có thể đặt REQUIRE_CATALOG=true trong .env để chặn release
 #    khi catalog rỗng.
 ```

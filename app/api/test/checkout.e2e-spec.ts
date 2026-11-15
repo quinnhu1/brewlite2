@@ -76,7 +76,7 @@ suite('checkout with PostgreSQL', () => {
     process.env.PAYMENT_MOCK_ALLOW_OVERRIDE = 'true';
     process.env.NODE_ENV = 'test';
     await db.$executeRawUnsafe(
-      'TRUNCATE loyalty_transactions,payments,order_item_toppings,order_items,orders,users CASCADE',
+      'TRUNCATE refunds,loyalty_transactions,payments,order_item_toppings,order_items,orders,users CASCADE',
     );
     await db.product.updateMany({
       data: { stock: 50, version: { increment: 1 } },
@@ -394,6 +394,11 @@ suite('checkout with PostgreSQL', () => {
     ]);
     expect(results.map((r) => r.status)).toEqual([200, 200]);
     expect(results[0].body.status).toBe('CANCELLED');
+    // INT-REFUND-01: both concurrent cancels see the SAME receipt; only one refund row exists.
+    expect(results[0].body.refund.refund_id).toBe(
+      results[1].body.refund.refund_id,
+    );
+    expect(await db.refunds.count()).toBe(1);
     expect(
       (await db.product.findUniqueOrThrow({ where: { productId: PRODUCT } }))
         .stock,
@@ -786,6 +791,342 @@ suite('checkout with PostgreSQL', () => {
       ).toBe('pending');
     } finally {
       mock.mockRestore();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Acceptance test IDs (docs/testing/test-results.md). Owner: Đức Long.
+  // ---------------------------------------------------------------------------
+  const TEN_K = 'c9999999-9999-4999-8999-000000000001';
+  async function createTenKProduct(stock = 3) {
+    await db.orders.deleteMany({
+      where: { order_items: { some: { product_id: TEN_K } } },
+    });
+    await db.product_size.deleteMany({ where: { product_id: TEN_K } });
+    await db.product.deleteMany({ where: { productId: TEN_K } });
+    await db.product.create({
+      data: {
+        productId: TEN_K,
+        productName: 'Ly thử 10K',
+        basePrice: 10000,
+        stock,
+        isActive: true,
+        categories: 'Tea',
+        product_size: { create: [{ size: 'S', add_price: 0 }] },
+      },
+    });
+  }
+  async function dropTenKProduct() {
+    await db.orders.deleteMany({
+      where: { order_items: { some: { product_id: TEN_K } } },
+    });
+    await db.product_size.deleteMany({ where: { product_id: TEN_K } });
+    await db.product.deleteMany({ where: { productId: TEN_K } });
+  }
+  const cancel = (id: string, token = tokenA) =>
+    request(app.getHttpServer())
+      .post(`/orders/${id}/cancel`)
+      .set(auth(token));
+
+  it('[API-MENU-01] lists active menu items and returns sizes/toppings, with clear id errors', async () => {
+    const menu = await request(app.getHttpServer()).get('/products').expect(200);
+    expect(menu.body.length).toBeGreaterThan(0);
+    expect(
+      menu.body.some((p: { productId: string }) => p.productId === MATCHA),
+    ).toBe(true);
+    const detail = await request(app.getHttpServer())
+      .get(`/products/${MATCHA}`)
+      .expect(200);
+    expect(
+      detail.body.product_size.map((s: { size: string }) => s.size),
+    ).toEqual(['S', 'M', 'L']);
+    expect(
+      detail.body.toppings.some(
+        (t: { topping_id: string }) => t.topping_id === REDBEAN,
+      ),
+    ).toBe(true);
+    await request(app.getHttpServer()).get('/products/not-a-uuid').expect(400);
+    await request(app.getHttpServer())
+      .get('/products/00000000-0000-4000-8000-000000000000')
+      .expect(404);
+  });
+
+  it('[INT-PRICE-01] rejects price/cost nested inside items without writing orders or stock', async () => {
+    for (const extra of [{ price: 15000 }, { cost: 15000 }, { unit_price: 1 }]) {
+      await create(
+        body({
+          items: [
+            {
+              product_id: PRODUCT,
+              size: 'S',
+              quantity: 1,
+              topping_ids: [],
+              ...extra,
+            },
+          ],
+        }),
+      ).expect(400);
+    }
+    await create(body({ subtotal: 1, discount: 0 })).expect(400);
+    expect(await db.orders.count()).toBe(0);
+    expect(
+      (await db.product.findUniqueOrThrow({ where: { productId: PRODUCT } }))
+        .stock,
+    ).toBe(50);
+  });
+
+  it('[INT-PRICE-02] charges 3 x 10.000đ = 30.000đ from the database price', async () => {
+    await createTenKProduct(3);
+    try {
+      const line = { product_id: TEN_K, size: 'S', quantity: 3, topping_ids: [] };
+      const q = await request(app.getHttpServer())
+        .post('/orders/quote')
+        .set(auth())
+        .send(body({ items: [line] }))
+        .expect(200);
+      expect(q.body).toMatchObject({ subtotal: 30000, discount: 0, total: 30000 });
+      const o = await create(body({ items: [line] })).expect(201);
+      expect(o.body.total).toBe(30000);
+      expect(
+        (await db.product.findUniqueOrThrow({ where: { productId: TEN_K } }))
+          .stock,
+      ).toBe(0);
+    } finally {
+      await dropTenKProduct();
+    }
+  });
+
+  it('[INT-QTY-01] rejects quantity 0, -1, 1.5, 51 and non-numbers without creating orders', async () => {
+    for (const quantity of [0, -1, 1.5, 51, '2', null]) {
+      await create(
+        body({
+          items: [{ product_id: PRODUCT, size: 'S', quantity, topping_ids: [] }],
+        }),
+      ).expect(400);
+    }
+    expect(await db.orders.count()).toBe(0);
+  });
+
+  it('[INT-IDEM-02] refuses a checkout key reused by another account and leaks nothing', async () => {
+    const key = newKey();
+    const mine = await create(body(), key).expect(201);
+    const other = await create(body(), key, tokenB).expect(409);
+    expect(JSON.stringify(other.body)).not.toContain(mine.body.order_id);
+    expect(await db.orders.count()).toBe(1);
+  });
+
+  it('[INT-CANCEL-01] cancelling an unpaid order twice restores stock once and creates no refund', async () => {
+    const o = await create().expect(201);
+    const first = await cancel(o.body.order_id).expect(200);
+    const second = await cancel(o.body.order_id).expect(200);
+    expect(first.body.refund).toBeNull();
+    expect(second.body.refund).toBeNull();
+    expect(await db.refunds.count()).toBe(0);
+    expect(
+      (await db.product.findUniqueOrThrow({ where: { productId: PRODUCT } }))
+        .stock,
+    ).toBe(50);
+    await request(app.getHttpServer())
+      .get(`/orders/${o.body.order_id}/refund`)
+      .set(auth())
+      .expect(404);
+  });
+
+  it('[INT-REFUND-01] a PAID mock order gets exactly one receipt, one stock restore and one ADJUST', async () => {
+    const o = await create().expect(201);
+    await pay(o.body.order_id).expect(200);
+    const out = await Promise.all([
+      cancel(o.body.order_id),
+      cancel(o.body.order_id),
+      cancel(o.body.order_id),
+    ]);
+    expect(out.map((r) => r.status)).toEqual([200, 200, 200]);
+    const ids = new Set(out.map((r) => r.body.refund?.refund_id));
+    expect(ids.size).toBe(1);
+    const receipt = out[0].body.refund;
+    expect(receipt).toMatchObject({
+      order_id: o.body.order_id,
+      amount: o.body.total,
+      status: 'succeeded',
+      provider: 'mock',
+      reason: 'CUSTOMER_CANCEL',
+    });
+    expect(receipt.completed_at).toBeTruthy();
+    expect(receipt).not.toHaveProperty('request_hash');
+    expect(receipt).not.toHaveProperty('idempotency_key');
+    expect(await db.refunds.count()).toBe(1);
+    expect(
+      await db.loyalty_transactions.count({ where: { type: 'ADJUST' } }),
+    ).toBe(1);
+    expect(
+      (await db.product.findUniqueOrThrow({ where: { productId: PRODUCT } }))
+        .stock,
+    ).toBe(50);
+    expect(
+      (await db.users.findUniqueOrThrow({ where: { user_id: userA } })).point,
+    ).toBe(0);
+    // The same receipt is visible on the receipt endpoint, the order detail and the admin view.
+    const mine = await request(app.getHttpServer())
+      .get(`/orders/${o.body.order_id}/refund`)
+      .set(auth())
+      .expect(200);
+    expect(mine.body.refund_id).toBe(receipt.refund_id);
+    const detail = await request(app.getHttpServer())
+      .get(`/orders/${o.body.order_id}`)
+      .set(auth())
+      .expect(200);
+    expect(detail.body.refund.refund_id).toBe(receipt.refund_id);
+    expect(detail.body.payment.status).toBe('refunded');
+    await promoteAdmin();
+    const admin = await request(app.getHttpServer())
+      .get(`/admin/orders/${o.body.order_id}/refund`)
+      .set(auth())
+      .expect(200);
+    expect(admin.body).toMatchObject({
+      refund_id: receipt.refund_id,
+      requested_by: userA,
+    });
+  });
+
+  it('[INT-REFUND-01] the database itself refuses a second refund row for the same payment', async () => {
+    const o = await create().expect(201);
+    await pay(o.body.order_id).expect(200);
+    await cancel(o.body.order_id).expect(200);
+    const first = await db.refunds.findFirstOrThrow();
+    await expect(
+      db.refunds.create({
+        data: {
+          payment_id: first.payment_id,
+          order_id: first.order_id,
+          idempotency_key: `manual-${newKey()}`,
+          request_hash: 'x'.repeat(64),
+          amount: first.amount,
+          status: 'succeeded',
+          provider: 'mock',
+          reason: 'CUSTOMER_CANCEL',
+          requested_by: userA,
+          completed_at: new Date(),
+        },
+      }),
+    ).rejects.toThrow();
+    expect(await db.refunds.count()).toBe(1);
+  });
+
+  it('[INT-REFUND-02] another user cannot cancel or read the refund; a preparing order cannot be refunded', async () => {
+    const o = await create().expect(201);
+    await pay(o.body.order_id).expect(200);
+    await cancel(o.body.order_id, tokenB).expect(404);
+    expect(
+      (await db.orders.findUniqueOrThrow({ where: { order_id: o.body.order_id } }))
+        .status,
+    ).toBe('paid');
+    await db.users.update({ where: { user_id: userA }, data: { role: 'staff' } });
+    await request(app.getHttpServer())
+      .patch(`/orders/${o.body.order_id}/status`)
+      .set(auth())
+      .send({ status: 'preparing' })
+      .expect(200);
+    await cancel(o.body.order_id).expect(409);
+    expect(await db.refunds.count()).toBe(0);
+    expect(
+      (
+        await db.payments.findFirstOrThrow({
+          where: { order_id: o.body.order_id },
+        })
+      ).status,
+    ).toBe('success');
+    // A refunded order of user A stays invisible to user B.
+    const o2 = await create().expect(201);
+    await pay(o2.body.order_id).expect(200);
+    await cancel(o2.body.order_id).expect(200);
+    await request(app.getHttpServer())
+      .get(`/orders/${o2.body.order_id}/refund`)
+      .set(auth(tokenB))
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/admin/orders/${o2.body.order_id}/refund`)
+      .set(auth(tokenB))
+      .expect(403);
+  });
+
+  it('[INT-REFUND-01] cancelling a free (100% discount) order records a 0đ receipt, no bank refund', async () => {
+    await db.promotions.create({
+      data: {
+        code: 'FREEREFUND',
+        promotion_name: 'Free refund test',
+        discount_type: 'fixed',
+        discount_value: 100000,
+        min_amount: 0,
+        start_at: new Date('2026-01-01'),
+        end_at: new Date('2030-01-01'),
+        is_active: true,
+      },
+    });
+    try {
+      const o = await create(body({ promotion_code: 'FREEREFUND' })).expect(201);
+      await pay(o.body.order_id).expect(200);
+      const res = await cancel(o.body.order_id).expect(200);
+      expect(res.body.refund).toMatchObject({ amount: 0, provider: 'free' });
+      expect(await db.loyalty_transactions.count()).toBe(0);
+    } finally {
+      await db.refunds.deleteMany();
+      await db.payments.deleteMany();
+      await db.orders.deleteMany();
+      await db.promotions.delete({ where: { code: 'FREEREFUND' } });
+    }
+  });
+
+  it('[INT-PROMO-01] reports unknown, expired and under-minimum codes; valid codes never make the total negative', async () => {
+    const quote = (data: Record<string, unknown>) =>
+      request(app.getHttpServer()).post('/orders/quote').set(auth()).send(data);
+    await db.promotions.create({
+      data: {
+        code: 'EXPIREDTEST',
+        promotion_name: 'Expired',
+        discount_type: 'percentage',
+        discount_value: 10,
+        min_amount: 0,
+        start_at: new Date('2020-01-01'),
+        end_at: new Date('2020-12-31'),
+        is_active: true,
+      },
+    });
+    await db.promotions.create({
+      data: {
+        code: 'BIGFIXEDTEST',
+        promotion_name: 'Bigger than the cart',
+        discount_type: 'fixed',
+        discount_value: 999999,
+        min_amount: 0,
+        start_at: new Date('2026-01-01'),
+        end_at: new Date('2030-01-01'),
+        is_active: true,
+      },
+    });
+    try {
+      await quote(body({ promotion_code: 'NOPE-123' })).expect(400);
+      await quote(body({ promotion_code: 'EXPIREDTEST' })).expect(400);
+      // BREW10 needs 50.000đ; one Espresso S is 29.000đ.
+      const under = await quote(body({ promotion_code: 'BREW10' })).expect(400);
+      expect(String(under.body.message)).toContain('BREW10');
+      // Lower-case code is accepted; 2 x Matcha M + red bean = 100.000đ -> 10% capped at 15.000đ.
+      const ok = await quote(
+        body({
+          promotion_code: 'brew10',
+          items: [
+            { product_id: MATCHA, size: 'M', quantity: 2, topping_ids: [REDBEAN] },
+          ],
+        }),
+      ).expect(200);
+      expect(ok.body).toMatchObject({ subtotal: 100000, discount: 10000, total: 90000 });
+      const capped = await quote(body({ promotion_code: 'BIGFIXEDTEST' })).expect(200);
+      expect(capped.body.total).toBe(0);
+      expect(capped.body.discount).toBe(capped.body.subtotal);
+      expect(await db.orders.count()).toBe(0);
+    } finally {
+      await db.promotions.deleteMany({
+        where: { code: { in: ['EXPIREDTEST', 'BIGFIXEDTEST'] } },
+      });
     }
   });
 });

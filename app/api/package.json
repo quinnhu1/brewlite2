@@ -21,7 +21,8 @@
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:seed:demo": "prisma db seed && prisma db execute --schema prisma/schema.prisma --file prisma/seed/demo-users.sql"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

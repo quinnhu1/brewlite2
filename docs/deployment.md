@@ -25,11 +25,19 @@ Xem cấu hình và phép thử NCB ở [VNPay Sandbox](VNPAY.md).
    ```bash
    cd /opt/brewlite
    docker compose -f docker-compose.prod.yml run --rm --no-deps api npx prisma db seed
-   # rồi tạo tài khoản admin bằng mật khẩu riêng, không dùng tài khoản demo
    ```
 
-   Seed trong repo chứa tài khoản demo công khai, không dùng nguyên trạng cho môi
-   trường bàn giao.
+   `prisma db seed` chỉ nạp catalog (`prisma/seed/catalog.sql`), **không tạo tài
+   khoản**. Tài khoản demo nằm riêng trong `prisma/seed/demo-users.sql` và không
+   được chạy trên production. Tạo admin production:
+
+   ```bash
+   # 1. Đăng ký một tài khoản bình thường trên website (mật khẩu riêng, mạnh).
+   # 2. Nâng quyền đúng tài khoản đó:
+   docker compose -f docker-compose.prod.yml exec db \
+     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+     -c "UPDATE users SET role='admin' WHERE lower(email)=lower('owner@example.com');"
+   ```
 
 5. Chọn chế độ thanh toán: `PAYMENT_PROVIDER=mock` +
    `PAYMENT_ALLOW_MOCK_IN_PRODUCTION=true` cho ví/thẻ mô phỏng theo đề, hoặc điền

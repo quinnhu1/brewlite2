@@ -1,0 +1,158 @@
+@startuml domain-class
+' BrewLite domain class diagram — follows app/api/prisma/schema.prisma (Đức Long).
+' Export: java -jar plantuml.jar -tsvg domain-class.puml   (SVG in repo is rendered from domain-class.dot)
+skinparam style strictuml
+skinparam classAttributeIconSize 0
+hide methods
+
+enum OrderStatus {
+  pending
+  payment_failed
+  paid
+  preparing
+  ready
+  completed
+  cancelled
+}
+enum PaymentStatus {
+  pending
+  success
+  failed
+  refunded
+}
+enum PaymentMethod {
+  momo
+  banking
+  vnpay
+  cash
+}
+enum RefundStatus {
+  pending
+  succeeded
+  failed
+}
+enum LoyaltyType {
+  EARN
+  REDEEM
+  EXPIRE
+  ADJUST
+}
+enum DiscountType {
+  percentage
+  fixed
+}
+
+class User {
+  user_id : UUID
+  name : String
+  phone : String {unique}
+  email : String {unique, case-insensitive}
+  role : customer | staff | admin
+  point : Int
+}
+class Product {
+  productId : UUID
+  productName : String
+  basePrice : Decimal
+  stock : Int {>= 0}
+  version : Int
+  isActive : Boolean
+  categories : String
+}
+class ProductSize {
+  size : S | M | L
+  add_price : Decimal
+}
+class Topping {
+  topping_id : UUID
+  topping_name : String
+  price : Decimal
+  is_active : Boolean
+}
+class Order {
+  order_id : UUID
+  order_code : String {unique}
+  status : OrderStatus
+  subtotal : Decimal
+  discount : Decimal
+  total : Decimal {= subtotal - discount}
+  checkout_key : String {unique}
+  request_hash : String
+  stock_reserved : Boolean
+  expires_at : DateTime
+}
+class OrderItem {
+  product_name : String
+  size : String
+  unit_price : Decimal
+  quantity : Int {1..50}
+  line_total : Decimal
+}
+class OrderItemTopping {
+  topping_name : String
+  price : Decimal
+}
+class Payment {
+  payment_id : UUID
+  idempotency_key : String {unique}
+  amount : Decimal
+  method : PaymentMethod
+  status : PaymentStatus
+  provider : mock | vnpay | free
+  transaction_id : String {unique}
+  gateway_ref : String {unique}
+  paid_at : DateTime
+}
+class Refund {
+  refund_id : UUID
+  idempotency_key : String {unique}
+  request_hash : String
+  amount : Decimal {>= 0}
+  status : RefundStatus
+  provider : String
+  reason : String
+  requested_at : DateTime
+  completed_at : DateTime
+  provider_ref : String {unique}
+}
+class Promotion {
+  code : String {unique}
+  discount_type : DiscountType
+  discount_value : Decimal
+  min_amount : Decimal
+  max_discount : Decimal
+  start_at : DateTime
+  end_at : DateTime
+}
+class LoyaltyTransaction {
+  loyalty_point : Int
+  type : LoyaltyType
+  description : String
+  created_at : DateTime
+}
+
+User "1" -- "0..*" Order : places >
+Order "1" *-- "1..*" OrderItem
+OrderItem "0..*" --> "1" Product
+OrderItem "1" *-- "0..*" OrderItemTopping
+OrderItemTopping "0..*" --> "1" Topping
+Product "1" *-- "1..3" ProductSize
+Product "0..*" -- "0..*" Topping : allows >
+Order "1" -- "0..*" Payment : attempts >
+Payment "1" -- "0..1" Refund : refunded by >
+Order "1" -- "0..*" Refund
+User "1" -- "0..*" Refund : requested_by >
+Promotion "0..1" -- "0..*" Order : applied to >
+User "1" -- "0..*" LoyaltyTransaction
+Order "0..1" -- "0..*" LoyaltyTransaction
+
+note bottom of Payment
+  Mỗi Order: tối đa 1 Payment pending
+  và 1 Payment success (partial unique index)
+end note
+note bottom of Refund
+  Mỗi Payment tối đa 1 Refund toàn phần
+  (unique payment_id). Mock/free: succeeded
+  ngay trong transaction hủy đơn.
+end note
+@enduml

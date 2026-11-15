@@ -7,8 +7,10 @@ Hướng dẫn cài đặt, nâng cấp DB và chạy test nằm ở [README g�
 ```powershell
 npm ci
 npx prisma migrate deploy
-npm run db:seed
+npm run db:seed:demo   # local: catalog + tài khoản demo. Production chỉ dùng npm run db:seed (catalog)
 npm run start:dev
 ```
+
+Swagger UI: `http://localhost:3001/swagger`, OpenAPI JSON: `http://localhost:3001/swagger-json`. POST `/orders` và POST `/payments` bắt buộc header `idempotency-key` (8–200 ký tự). Collection Postman ở `docs/testing/postman/`.
 
 Tạo `.env` trước khi `npm ci`. Không dùng `prisma db push` hoặc sửa migration cũ để đồng bộ máy nhóm. Mỗi thay đổi schema cần một migration mới.

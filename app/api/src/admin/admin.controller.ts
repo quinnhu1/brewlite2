@@ -11,7 +11,15 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ApiAuthRequired, ApiForbidden, ApiNotFound } from '../common/api-docs.js';
+import { AdminRefundReceiptDto } from '../refunds/dto/refund-receipt.dto.js';
+import { RefundsService } from '../refunds/refunds.service.js';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { AdminService } from './admin.service.js';
@@ -24,11 +32,14 @@ function pageNumber(raw = '1') {
 @ApiTags('admin')
 @ApiBearerAuth()
 @UseGuards(AdminGuard)
+@ApiAuthRequired()
+@ApiForbidden()
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly orders: OrdersService,
+    private readonly refunds: RefundsService,
   ) {}
   @Get('products') products(
     @Query('q') q = '',
@@ -70,6 +81,13 @@ export class AdminController {
   }
   @Get('orders/:id') one(@Param('id', ParseUUIDPipe) id: string) {
     return this.admin.order(id);
+  }
+  @Get('orders/:id/refund')
+  @ApiOperation({ summary: 'Chứng từ hoàn tiền của một đơn (quản lý)' })
+  @ApiOkResponse({ type: AdminRefundReceiptDto })
+  @ApiNotFound('Đơn hàng không có chứng từ hoàn tiền.')
+  refund(@Param('id', ParseUUIDPipe) id: string) {
+    return this.refunds.receiptForAdmin(id);
   }
   @Patch('orders/:id/status') status(
     @Param('id', ParseUUIDPipe) id: string,

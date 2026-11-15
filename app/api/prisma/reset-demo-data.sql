@@ -6,6 +6,8 @@ DO $$ BEGIN
    RAISE EXCEPTION 'Reset blocked. Use scripts/Reset-DemoData.ps1 after backing up.';
  END IF;
 END $$;
+-- refunds reference payments/orders/users (ON DELETE RESTRICT), so they go first.
+DELETE FROM refunds;
 DELETE FROM loyalty_transactions;
 DELETE FROM payments;
 DELETE FROM order_item_toppings;

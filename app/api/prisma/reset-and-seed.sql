@@ -10,7 +10,7 @@ DO $$ BEGIN
   RAISE EXCEPTION 'Reset blocked: use Reset-AndSeed.ps1 with -ConfirmReset RESET_ALL_BREWLITE after backup.';
  END IF;
 END $$;
-TRUNCATE public.loyalty_transactions,public.payments,public.order_item_toppings,
+TRUNCATE public.refunds,public.loyalty_transactions,public.payments,public.order_item_toppings,
  public.order_items,public.orders,public.product_toppings,public.product_size,
  public.products,public.toppings,public.promotions,public.users RESTART IDENTITY;
 INSERT INTO public.products (product_id,product_name,description,base_price,image_url,stock,version,is_active,categories) VALUES

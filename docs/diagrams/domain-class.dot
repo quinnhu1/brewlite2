@@ -1,0 +1,75 @@
+digraph BrewLiteDomain {
+  // BrewLite domain class diagram (Đức Long). Render: dot -Tsvg domain-class.dot -o Domain_Class_Diagram.svg
+  graph [rankdir=LR, fontname="Helvetica", fontsize=11, nodesep=0.5, ranksep=0.9, pad=0.3, label="BrewLite — sơ đồ lớp miền (theo schema.prisma). Xanh lá: lớp mới (Refund). Vàng: enum.", labelloc=t];
+  node [shape=plain, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9, color="#334155", arrowhead=none];
+  User [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>User</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">user_id : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">name : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">phone : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">email : String {unique, ci}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">role : customer|staff|admin</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">point : Int</TD></TR></TABLE>>];
+
+  Product [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>Product</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">productId : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">productName : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">basePrice : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">stock : Int {≥ 0}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">version : Int</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">isActive : Boolean</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">categories : String</TD></TR></TABLE>>];
+
+  ProductSize [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>ProductSize</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">size : S|M|L</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">add_price : Decimal</TD></TR></TABLE>>];
+
+  Topping [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>Topping</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">topping_id : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">topping_name : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">price : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">is_active : Boolean</TD></TR></TABLE>>];
+
+  Order [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>Order</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">order_id : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">order_code : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">status : OrderStatus</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">subtotal : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">discount : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">total : Decimal {= subtotal − discount}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">checkout_key : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">request_hash : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">stock_reserved : Boolean</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">expires_at : DateTime</TD></TR></TABLE>>];
+
+  OrderItem [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>OrderItem</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">product_name : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">size : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">unit_price : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">quantity : Int {1..50}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">line_total : Decimal</TD></TR></TABLE>>];
+
+  OrderItemTopping [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>OrderItemTopping</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">topping_name : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">price : Decimal</TD></TR></TABLE>>];
+
+  Payment [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>Payment</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">payment_id : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">idempotency_key : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">amount : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">method : PaymentMethod</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">status : PaymentStatus</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">provider : mock|vnpay|free</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">transaction_id : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">gateway_ref : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">paid_at : DateTime</TD></TR></TABLE>>];
+
+  Refund [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#DCFCE7"><B>Refund</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">refund_id : UUID</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">idempotency_key : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">request_hash : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">amount : Decimal {≥ 0}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">status : RefundStatus</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">provider : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">reason : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">requested_at : DateTime</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">completed_at : DateTime</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">provider_ref : String {unique}</TD></TR></TABLE>>];
+
+  Promotion [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>Promotion</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">code : String {unique}</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">discount_type : DiscountType</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">discount_value : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">min_amount : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">max_discount : Decimal</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">start_at : DateTime</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">end_at : DateTime</TD></TR></TABLE>>];
+
+  LoyaltyTransaction [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#F1F5F9"><B>LoyaltyTransaction</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">loyalty_point : Int</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">type : LoyaltyType</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">description : String</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">created_at : DateTime</TD></TR></TABLE>>];
+
+  subgraph cluster_enums { label="Enum"; style=dashed; color="#B45309";
+  OrderStatus [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>OrderStatus</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">pending</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">payment_failed</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">paid</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">preparing</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">ready</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">completed</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">cancelled</TD></TR></TABLE>>];
+
+  PaymentStatus [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>PaymentStatus</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">pending</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">success</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">failed</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">refunded</TD></TR></TABLE>>];
+
+  PaymentMethod [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>PaymentMethod</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">momo</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">banking</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">vnpay</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">cash</TD></TR></TABLE>>];
+
+  RefundStatus [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>RefundStatus</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">pending</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">succeeded</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">failed</TD></TR></TABLE>>];
+
+  LoyaltyType [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>LoyaltyType</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">EARN</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">REDEEM</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">EXPIRE</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">ADJUST</TD></TR></TABLE>>];
+
+  DiscountType [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#334155">
+<TR><TD BGCOLOR="#FEF3C7"><FONT POINT-SIZE="9">&laquo;enumeration&raquo;</FONT><BR/><B>DiscountType</B></TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">percentage</TD></TR><TR><TD ALIGN="LEFT" BALIGN="LEFT">fixed</TD></TR></TABLE>>];
+
+  }
+  User -> Order [taillabel="1", headlabel="0..*", labeldistance=1.6, label="places"];
+  Order -> OrderItem [taillabel="1", headlabel="1..*", labeldistance=1.6, dir=back, arrowtail=diamond];
+  OrderItem -> Product [taillabel="0..*", headlabel="1", labeldistance=1.6];
+  OrderItem -> OrderItemTopping [taillabel="1", headlabel="0..*", labeldistance=1.6, dir=back, arrowtail=diamond];
+  OrderItemTopping -> Topping [taillabel="0..*", headlabel="1", labeldistance=1.6];
+  Product -> ProductSize [taillabel="1", headlabel="1..3", labeldistance=1.6, dir=back, arrowtail=diamond];
+  Product -> Topping [taillabel="0..*", headlabel="0..*", labeldistance=1.6, label="allows"];
+  Order -> Payment [taillabel="1", headlabel="0..*", labeldistance=1.6, label="attempts"];
+  Payment -> Refund [taillabel="1", headlabel="0..1", labeldistance=1.6, label="refunded by"];
+  Order -> Refund [taillabel="1", headlabel="0..*", labeldistance=1.6];
+  User -> Refund [taillabel="1", headlabel="0..*", labeldistance=1.6, label="requested_by"];
+  Promotion -> Order [taillabel="0..1", headlabel="0..*", labeldistance=1.6, label="applied to"];
+  User -> LoyaltyTransaction [taillabel="1", headlabel="0..*", labeldistance=1.6];
+  Order -> LoyaltyTransaction [taillabel="0..1", headlabel="0..*", labeldistance=1.6];
+  note1 [shape=note, style=filled, fillcolor="#FFFBEB", fontsize=9, label="Mỗi Order: tối đa 1 Payment pending\nvà 1 Payment success (partial unique index).\nMỗi Payment tối đa 1 Refund toàn phần\n(unique payment_id); mock/free: succeeded\nngay trong transaction hủy đơn."];
+  note1 -> Refund [style=dashed, arrowhead=none];
+}

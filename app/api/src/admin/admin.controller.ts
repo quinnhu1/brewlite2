@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -12,6 +13,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { AdminService } from './admin.service.js';
@@ -23,7 +25,7 @@ function pageNumber(raw = '1') {
 }
 @ApiTags('admin')
 @ApiBearerAuth()
-@UseGuards(AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -70,6 +72,11 @@ export class AdminController {
   }
   @Get('orders/:id') one(@Param('id', ParseUUIDPipe) id: string) {
     return this.admin.order(id);
+  }
+  @Post('orders/:id/reconcile')
+  @HttpCode(200)
+  reconcile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.admin.reconcileOrder(id);
   }
   @Patch('orders/:id/status') status(
     @Param('id', ParseUUIDPipe) id: string,

@@ -1,10 +1,12 @@
+import { PaymentsModule } from '../payments/payments.module.js';
+import { RefundsModule } from '../refunds/refunds.module.js';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { AdminController } from './admin.controller.js';
 import { AdminService } from './admin.service.js';
 @Module({
-  imports: [AuthModule, OrdersModule],
+  imports: [AuthModule, OrdersModule, PaymentsModule, RefundsModule],
   controllers: [AdminController],
   providers: [AdminService],
 })

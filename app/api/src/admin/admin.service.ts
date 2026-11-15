@@ -1,3 +1,5 @@
+import { PaymentsService } from '../payments/payments.service.js';
+import { RefundsService } from '../refunds/refunds.service.js';
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +15,8 @@ export class AdminService {
   constructor(
     private readonly db: PrismaService,
     private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
+    private readonly refunds: RefundsService,
   ) {}
   async products(q = '', category = '', page = 1, active = '') {
     const where: Prisma.ProductWhereInput = {
@@ -178,6 +182,7 @@ export class AdminService {
     return {
       items: rows.map((o) => ({
         order_id: o.order_id,
+        cancellation_requested_at: o.cancellation_requested_at,
         order_code: o.order_code,
         status: o.status.toUpperCase(),
         total: Number(o.total),
@@ -215,5 +220,19 @@ export class AdminService {
       customer_phone: o.customer_phone,
       order_note: o.order_note,
     };
+  }
+  async reconcileOrder(id: string) {
+    const o = await this.db.orders.findUnique({
+      where: { order_id: id },
+      include: { payments: true, refunds: true },
+    });
+    if (!o) throw new NotFoundException('Không tìm thấy đơn.');
+    for (const p of o.payments.filter(
+      (p) => p.status === 'pending' && p.provider === 'vnpay',
+    ))
+      await this.payments.reconcile(o.user_id, p.payment_id);
+    // Uses the persisted cooldown and never resubmits an uncertain refund.
+    for (const r of o.refunds) await this.refunds.process(r.refund_id, true);
+    return this.order(id);
   }
 }

@@ -7,19 +7,19 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+<<<<<<< HEAD
 import { PrismaService } from '../prisma/prisma.service.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
+=======
+import { isUUID } from 'class-validator';
+>>>>>>> 578391e (cập nhật forder ath)
 
-/** The authenticated user attached to the request by JwtAuthGuard. */
+// Thông tin người dùng lấy từ token, gắn vào request cho controller dùng.
 export interface AuthUser {
-  user_id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
-  point: number;
+  user_id: string; // UUID, cùng tên với cột trong DB
 }
 
+<<<<<<< HEAD
 export type AuthenticatedRequest = Request & { user?: AuthUser };
 
 interface TokenPayload {
@@ -52,17 +52,38 @@ export class JwtAuthGuard implements CanActivate {
     const token = header?.startsWith('Bearer ')
       ? header.slice('Bearer '.length).trim()
       : '';
+=======
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly jwt: JwtService) {}
 
-    if (!token) throw new UnauthorizedException('Cần đăng nhập.');
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<Request>();
+>>>>>>> 578391e (cập nhật forder ath)
 
+    // Header có dạng: Authorization: Bearer <token>
+    const [type, token] = req.headers.authorization?.split(' ') ?? [];
+    if (type !== 'Bearer' || !token) {
+      throw new UnauthorizedException('Thiếu token đăng nhập');
+    }
+
+<<<<<<< HEAD
     let payload: TokenPayload;
     try {
       payload = await this.jwt.verifyAsync<TokenPayload>(token, {
         algorithms: ['HS256'],
       });
+=======
+    try {
+      // Kiểm tra chữ ký và hạn của token. Sai hoặc hết hạn thì ném lỗi.
+      const payload = await this.jwt.verifyAsync<{ user_id: string }>(token);
+      if (!isUUID(payload.user_id)) throw new Error('Missing user identity');
+      (req as Request & { user: AuthUser }).user = { user_id: payload.user_id };
+>>>>>>> 578391e (cập nhật forder ath)
     } catch {
-      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
+      throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn');
     }
+<<<<<<< HEAD
     if (!payload?.sub || typeof payload.ver !== 'number') {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
     }
@@ -89,5 +110,8 @@ export class JwtAuthGuard implements CanActivate {
     const { token_version: _tokenVersion, ...profile } = user;
     request.user = profile;
     return true;
+=======
+    return true; // cho request đi tiếp
+>>>>>>> 578391e (cập nhật forder ath)
   }
 }

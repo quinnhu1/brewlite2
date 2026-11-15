@@ -4,16 +4,21 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import type { AuthenticatedRequest } from './jwt-auth.guard.js';
-
-/** Allows only users whose current role is `admin`. */
+import { PrismaService } from '../prisma/prisma.service.js';
+import type { AuthUser } from './jwt-auth.guard.js';
 @Injectable()
 export class AdminGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const user = context.switchToHttp().getRequest<AuthenticatedRequest>().user;
-    if (user?.role !== 'admin') {
-      throw new ForbiddenException('Chỉ quản trị viên được phép truy cập.');
-    }
+  constructor(private readonly prisma: PrismaService) {}
+  async canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest<{ user: AuthUser }>();
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: req.user.user_id },
+      select: { role: true },
+    });
+    if (user?.role !== 'admin')
+      throw new ForbiddenException(
+        'Chỉ quản trị viên được truy cập trang admin.',
+      );
     return true;
   }
 }

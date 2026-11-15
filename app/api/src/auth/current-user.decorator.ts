@@ -1,9 +1,8 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import type { AuthUser } from './jwt-auth.guard.js';
+import type { AuthenticatedRequest, AuthUser } from './jwt-auth.guard.js';
 
-// Dùng trong controller: @CurrentUser() user  ->  user.user_id
+/** Injects the user resolved by JwtAuthGuard into a controller parameter. */
 export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): AuthUser => {
-    return ctx.switchToHttp().getRequest().user;
-  },
+  (_data: unknown, context: ExecutionContext): AuthUser | undefined =>
+    context.switchToHttp().getRequest<AuthenticatedRequest>().user,
 );

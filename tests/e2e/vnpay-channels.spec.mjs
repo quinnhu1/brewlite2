@@ -33,7 +33,8 @@ async function fixture(page, pending = false) {
   await page.route('**/payments/config', route => fulfillApi(route, {
     provider: 'vnpay', configured: true, environment: 'sandbox', allow_simulate: false,
   }));
-  await page.route(`**/orders/${orderId}`, route => fulfillApi(route, order));
+  // Match ONLY the backend API, not the Next.js page /orders/:id on :3100.
+  await page.route(`http://127.0.0.1:3101/orders/${orderId}`, route => fulfillApi(route, order));
   // Only UI transport is stubbed here; signed URLs and DB transitions have PostgreSQL tests.
   await page.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ body: 'Sandbox navigation intercepted for UI test' }));
   return order;

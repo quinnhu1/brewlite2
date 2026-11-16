@@ -2,6 +2,20 @@ import { expect, test } from '@playwright/test';
 
 const orderId = '10000000-0000-4000-8000-000000000001';
 const paymentId = '20000000-0000-4000-8000-000000000001';
+
+// The web app runs on :3100, while API requests go to :3101. Mocked API
+// responses must include CORS headers, just like the real NestJS server does.
+const apiCorsHeaders = {
+  'access-control-allow-origin': 'http://127.0.0.1:3100',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'Authorization, Content-Type, Idempotency-Key',
+};
+async function fulfillApi(route, json = {}, status = 200) {
+  if (route.request().method() === 'OPTIONS') {
+    return route.fulfill({ status: 204, headers: apiCorsHeaders });
+  }
+  return route.fulfill({ status, headers: apiCorsHeaders, json });
+}
 async function fixture(page, pending = false) {
   const payment = { payment_id: paymentId, provider: 'vnpay', method: 'vnpay',
     status: pending ? 'pending' : 'failed', bank_code: 'VNPAYQR',
@@ -15,11 +29,11 @@ async function fixture(page, pending = false) {
     actions: { can_change_method: true, can_retry_payment: !pending, can_resume_payment: pending,
       can_reconcile: pending, can_cancel: false, can_replace: false } };
   await page.addInitScript(() => localStorage.setItem('token', 'browser-fixture'));
-  await page.route('**/auth/me', route => route.fulfill({ json: { user_id: 'user-fixture', name: 'Test Customer', phone: '0900000000', role: 'customer' } }));
-  await page.route('**/payments/config', route => route.fulfill({ json: {
+  await page.route('**/auth/me', route => fulfillApi(route, { user_id: 'user-fixture', name: 'Test Customer', phone: '0900000000', role: 'customer' }));
+  await page.route('**/payments/config', route => fulfillApi(route, {
     provider: 'vnpay', configured: true, environment: 'sandbox', allow_simulate: false,
-  } }));
-  await page.route(`**/orders/${orderId}`, route => route.fulfill({ json: order }));
+  }));
+  await page.route(`**/orders/${orderId}`, route => fulfillApi(route, order));
   // Only UI transport is stubbed here; signed URLs and DB transitions have PostgreSQL tests.
   await page.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ body: 'Sandbox navigation intercepted for UI test' }));
   return order;
@@ -29,15 +43,17 @@ test('offers exactly QR and card, then retries a failed QR with a new key and ca
   await fixture(page);
   const attempts = [];
   await page.route('**/payments', async route => {
+    if (route.request().method() === 'OPTIONS') return fulfillApi(route);
     const body = route.request().postDataJSON();
     const key = route.request().headers()['idempotency-key'];
     attempts.push({ body, key });
-    await route.fulfill({ json: {
+    await fulfillApi(route, {
       payment_id: paymentId, idempotency_key: key,
       payment_status: 'failed', payment_url: null,
-    } });
+    });
   });
   await page.goto(`/orders/${orderId}`);
+  await expect(page.getByRole('region', { name: 'Thanh toán đơn' })).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(2);
   await page.getByRole('radio', { name: 'VNPay QR (Sandbox)', exact: true }).check();
   await page.getByRole('button', { name: 'Thanh toán / thử lại', exact: true }).click();
@@ -57,15 +73,21 @@ test('a pending legacy QR can select a card without POSTing another payment', as
   await fixture(page, true);
   let creates = 0;
   let selected;
-  await page.route('**/payments', route => { creates++; return route.fulfill({ status: 500 }); });
+  await page.route('**/payments', route => {
+    if (route.request().method() === 'OPTIONS') return fulfillApi(route);
+    creates++;
+    return fulfillApi(route, { message: 'Unexpected payment create' }, 500);
+  });
   await page.route(`**/payments/${paymentId}/gateway`, route => {
+    if (route.request().method() === 'OPTIONS') return fulfillApi(route);
     selected = route.request().postDataJSON();
-    return route.fulfill({ json: {
+    return fulfillApi(route, {
       payment_id: paymentId, payment_status: 'pending',
       payment_url: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?same_reference=1',
-    } });
+    });
   });
   await page.goto(`/orders/${orderId}`);
+  await expect(page.getByRole('region', { name: 'Thanh toán đơn' })).toBeVisible();
   await page.getByRole('radio', { name: 'Thẻ ngân hàng', exact: true }).check();
   await page.getByRole('button', { name: 'Tiếp tục với phương thức đã chọn', exact: true }).click();
   await expect(page).toHaveURL(/sandbox\.vnpayment\.vn/);

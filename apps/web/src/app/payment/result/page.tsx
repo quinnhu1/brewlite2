@@ -18,6 +18,7 @@ function Result() {
   const router = useRouter();
   const ref = params.get("reference");
   const callbackError = params.get("error");
+  const gatewayCode = params.get("gateway_code");
   const invalid = callbackError !== null || !ref;
   const [result, setResult] = useState<PaymentResult | null>(null);
   const [error, setError] = useState("");
@@ -119,6 +120,8 @@ function Result() {
         </p>
       ) : (
         <p>
+          {gatewayCode && /^\d{2}$/.test(gatewayCode) && gatewayCode !== "00" &&
+            `Trang VNPay trả về mã ${gatewayCode}. `}
           {timedOut
             ? "Chưa nhận được xác nhận cuối cùng. Bạn có thể kiểm tra với VNPay tại trang chi tiết đơn."
             : "Đang chờ máy chủ xác nhận giao dịch với VNPay..."}
@@ -136,6 +139,16 @@ function Result() {
         >
           Xem đơn #{result.order_code}
         </Link>
+      )}
+      {result?.payment_status === "failed" && (
+        <Link className="coffee-button mt-6 inline-block" href={`/orders/${result.order_id}`}>
+          Chọn phương thức khác và thử lại
+        </Link>
+      )}
+      {result?.payment_status === "pending" && (
+        <p className="mt-4 text-sm">
+          Muốn đổi cách thanh toán? Mở chi tiết đơn và chọn lại QR hoặc Thẻ ngân hàng. Giao dịch đang chờ sẽ được dùng lại.
+        </p>
       )}
       <Link className="mt-6 block underline" href="/account">
         Về tài khoản và lịch sử đơn

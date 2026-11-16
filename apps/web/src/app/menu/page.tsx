@@ -80,7 +80,7 @@ function MenuContent() {
   };
 
   return (
-    <main className="min-h-screen w-full bg-[#f2ebe4] px-5 pb-20 pt-28 text-[#2b100c] md:px-10">
+    <main className="menu-page min-h-screen w-full bg-[#f2ebe4] px-5 pb-20 text-[#2b100c] md:px-10">
       <div className="mx-auto max-w-[1240px]">
         <nav className="mb-14 flex flex-wrap items-center justify-center gap-3 sm:gap-5" aria-label="Product categories">
           {CATEGORY_TABS.map((category) => {

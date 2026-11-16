@@ -13,6 +13,7 @@ import {
   type PaymentConfig,
 } from "@/lib/api/payments";
 import { syncCheckoutWithOrder, openVnpay } from "@/lib/checkout/sync";
+import VnpayChoices, { type VnpayChannel } from "./VnpayChoices";
 import { ApiError } from "@/lib/api/client";
 import {
   useCartStore,
@@ -54,12 +55,9 @@ export default function PaymentModal({
   const [address, setAddress] = useState("");
   const [note, setNote] = useState("");
   const [scheduled, setScheduled] = useState("");
-  const [channel, setChannel] = useState<
-    NonNullable<PaymentBody["bank_code"]> | ""
-  >("");
+  const [channel, setChannel] = useState<VnpayChannel>("VNBANK");
   const [outcome, setOutcome] = useState<"SUCCESS" | "FAILED">("SUCCESS");
   const [success, setSuccess] = useState<OrderConfirmationResult | null>(null);
-  const [cardType, setCardType] = useState<"VNBANK" | "INTCARD">("VNBANK");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState<{
@@ -70,12 +68,6 @@ export default function PaymentModal({
   const [body, setBody] = useState<CreateOrderBody | null>(null);
   const submitting = useRef(false);
   const ownCheckout = saved?.userId === userId ? saved : null;
-  const chosenChannel = ownCheckout?.paymentBody
-    ? (ownCheckout.paymentBody.bank_code ?? "")
-    : channel;
-  const cardSelected =
-    chosenChannel === "VNBANK" || chosenChannel === "INTCARD";
-  const displayedCardType = cardSelected ? chosenChannel : cardType;
 
   useEffect(() => {
     let active = true;
@@ -182,7 +174,7 @@ export default function PaymentModal({
     }
   }
 
-  async function pay() {
+  async function pay(useGatewayChooser = false) {
     if (
       submitting.current ||
       !config ||
@@ -251,8 +243,15 @@ export default function PaymentModal({
       if (fresh.cancellation_requested_at)
         throw new Error(fresh.message ?? "Đơn đang được hủy.");
       if (fresh.actions.can_resume_payment && fresh.payment?.payment_url) {
-        openVnpay(fresh.payment.payment_url);
-        return;
+        const resumed = await paymentsApi.openGateway(fresh.payment.payment_id, useGatewayChooser ? undefined : channel);
+        if (resumed.payment_url) {
+          openVnpay(resumed.payment_url);
+          return;
+        }
+        const updated = await ordersApi.one(order.order_id);
+        syncCheckoutWithOrder(updated);
+        setServerOrder(updated);
+        throw new Error("Kết quả vừa thay đổi. Hãy xem trạng thái đơn và tiếp tục.");
       }
       if (!fresh.actions.can_retry_payment)
         throw new Error(
@@ -262,14 +261,15 @@ export default function PaymentModal({
       const paymentBody: PaymentBody = checkout.paymentBody ?? {
         order_id: order.order_id,
         method: config.provider === "mock" ? method : "vnpay",
-        ...(config.provider === "vnpay" && channel
-          ? { bank_code: channel }
-          : {}),
+        ...(config.provider === "vnpay" ? { bank_code: channel } : {}),
         ...(config.allow_simulate ? { simulate_result: outcome } : {}),
       };
       checkout = { ...checkout, paymentBody };
       useCartStore.getState().setCheckout(checkout);
       const result = await paymentsApi.create(paymentBody, checkout.paymentKey);
+      // The server may return an existing pending transaction from another tab.
+      checkout = { ...checkout, paymentKey: result.idempotency_key };
+      useCartStore.getState().setCheckout(checkout);
       if (result.payment_status === "success") {
         useCartStore.getState().finishCheckout(order.order_id);
         onPaymentSuccess(order);
@@ -329,6 +329,26 @@ export default function PaymentModal({
           ? reason.message
           : "Không kết nối được. Hãy thử lại cùng đơn.",
       );
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function checkPayment() {
+    if (!serverOrder?.payment || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await paymentsApi.reconcile(serverOrder.payment.payment_id);
+      const fresh = await ordersApi.one(serverOrder.order_id);
+      syncCheckoutWithOrder(fresh);
+      setServerOrder(fresh);
+      if (result.payment_status === "pending")
+        setError(result.message ?? "VNPay chưa có kết quả cuối cùng. Hãy kiểm tra lại sau.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Chưa kiểm tra được giao dịch.");
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -546,65 +566,26 @@ export default function PaymentModal({
                     </label>
                   );
                 })}
-              {config?.provider === "vnpay" &&
-                (
-                  [
-                    { value: "", label: "Cổng VNPay · chọn phương thức" },
-                    { value: "VNPAYQR", label: "VNPay QR (Sandbox)" },
-                    { value: displayedCardType, label: "Thẻ ngân hàng" },
-                  ] as const
-                ).map(({ value, label }) => (
-                  <label
-                    key={label}
-                    className={`payment-choice ${chosenChannel === value ? "selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="channel"
-                      checked={chosenChannel === value}
-                      disabled={
-                        busy ||
-                        !!ownCheckout?.paymentBody ||
-                        serverOrder?.payment?.status === "pending"
-                      }
-                      onChange={() => setChannel(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
             </div>
             {config?.provider === "vnpay" && (
-              <>
-                {cardSelected && (
-                  <label className="block text-sm">
-                    Loại thẻ
-                    <select
-                      className="ml-3 rounded border p-2"
-                      value={displayedCardType}
-                      disabled={
-                        busy ||
-                        !!ownCheckout?.paymentBody ||
-                        serverOrder?.payment?.status === "pending"
-                      }
-                      onChange={(event) => {
-                        const value =
-                          event.target.value === "INTCARD"
-                            ? "INTCARD"
-                            : "VNBANK";
-                        setCardType(value);
-                        setChannel(value);
-                      }}
-                    >
-                      <option value="VNBANK">ATM / tài khoản nội địa</option>
-                      <option value="INTCARD">Thẻ quốc tế</option>
-                    </select>
-                  </label>
-                )}
-                <p className="text-sm">
-                  VNPay Sandbox hiển thị các phương thức test được hỗ trợ cho
-                  merchant.
-                </p>
-              </>
+              <VnpayChoices
+                value={ownCheckout?.paymentBody && !serverOrder?.actions.can_resume_payment
+                  ? ownCheckout.paymentBody.bank_code ?? channel : channel}
+                onChange={setChannel}
+                disabled={busy || (!!ownCheckout?.paymentBody && !serverOrder?.actions.can_resume_payment)}
+              />
+            )}
+            {config?.provider === "vnpay" && serverOrder?.payment?.status === "pending" && (
+              <div className="rounded-xl bg-amber-50 p-4 text-sm space-y-3">
+                <p>Phiên trước chưa có kết quả cuối cùng. Bạn có thể mở lại màn chọn
+                  phương thức trên VNPay của cùng giao dịch, hoặc kiểm tra kết quả.</p>
+                <button disabled={busy} className="block underline" onClick={() => void pay(true)}>
+                  Mở màn chọn phương thức trên VNPay
+                </button>
+                <button disabled={busy} className="underline" onClick={() => void checkPayment()}>
+                  Kiểm tra kết quả thanh toán
+                </button>
+              </div>
             )}
             {config?.allow_simulate && (
               <label className="block text-sm">
@@ -648,7 +629,9 @@ export default function PaymentModal({
               onClick={() => void pay()}
               className="w-full rounded-full bg-[#2b100c] p-3 font-bold text-white disabled:opacity-50"
             >
-              {busy ? "Đang xử lý..." : "CONFIRM · Tiếp tục thanh toán"}
+              {busy ? "Đang xử lý..." : serverOrder?.actions.can_resume_payment
+                ? "Tiếp tục với phương thức đã chọn"
+                : "CONFIRM · Tiếp tục thanh toán"}
             </button>
             {ownCheckout?.orderId && (
               <button

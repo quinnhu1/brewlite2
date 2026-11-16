@@ -12,7 +12,8 @@ export function syncCheckoutWithOrder(order: OrderDetail) {
   } else if (
     order.payment?.status === "failed" &&
     state.checkout.paymentBody &&
-    state.checkout.paymentKey === order.payment.idempotency_key
+    (state.checkout.paymentKey === order.payment.idempotency_key ||
+      order.actions.can_retry_payment)
   ) {
     state.setCheckout({
       ...state.checkout,

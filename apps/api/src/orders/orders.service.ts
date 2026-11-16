@@ -432,7 +432,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         !cancelling &&
         ['pending', 'payment_failed', 'paid'].includes(row.status),
       can_retry_payment: !cancelling && payable && !pending,
-      can_change_method: !cancelling && payable && !pending,
+      // Pending VNPay changes reuse the same reference through /payments/:id/gateway.
+      can_change_method: !cancelling && payable && (!pending || last?.provider === 'vnpay'),
       can_resume_payment:
         !cancelling &&
         pending &&

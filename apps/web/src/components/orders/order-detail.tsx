@@ -13,6 +13,7 @@ import { ApiError } from "@/lib/api/client";
 import { useCartStore } from "@/store/useCartStore";
 import { openVnpay, syncCheckoutWithOrder } from "@/lib/checkout/sync";
 import { OrderStatus } from "./order-status";
+import VnpayChoices, { type VnpayChannel } from "../cart/VnpayChoices";
 import PaymentHistory from "./payment-history";
 const money = (n: number) => n.toLocaleString("vi-VN") + "đ";
 export default function OrderDetail({ id }: { id: string }) {
@@ -25,7 +26,7 @@ export default function OrderDetail({ id }: { id: string }) {
   const [now, setNow] = useState(0);
   const [uncertain, setUncertain] = useState(false);
   const [reason, setReason] = useState("");
-  const [channel, setChannel] = useState("");
+  const [channel, setChannel] = useState<VnpayChannel>("VNBANK");
   const [method, setMethod] = useState<"momo" | "banking">("banking");
   const [outcome, setOutcome] = useState<"SUCCESS" | "FAILED">("SUCCESS");
   const working = useRef(false);
@@ -75,7 +76,7 @@ export default function OrderDetail({ id }: { id: string }) {
       clearInterval(timer);
     };
   }, [id, router]);
-  async function action(kind: "cancel" | "pay" | "reconcile") {
+  async function action(kind: "cancel" | "pay" | "reconcile" | "gateway") {
     if (!order || !config || working.current) return;
     working.current = true;
     setBusy(true);
@@ -96,7 +97,12 @@ export default function OrderDetail({ id }: { id: string }) {
         const fresh = await ordersApi.one(id);
         accept(fresh);
         if (fresh.actions.can_resume_payment && fresh.payment?.payment_url) {
-          openVnpay(fresh.payment.payment_url);
+          const resumed = await paymentsApi.openGateway(fresh.payment.payment_id, kind === "gateway" ? undefined : channel);
+          if (resumed.payment_url) {
+            openVnpay(resumed.payment_url);
+            return;
+          }
+          accept(await ordersApi.one(id));
           return;
         }
         if (!fresh.actions.can_retry_payment)
@@ -107,9 +113,7 @@ export default function OrderDetail({ id }: { id: string }) {
         const body: PaymentBody = {
           order_id: id,
           method: config.provider === "vnpay" ? "vnpay" : method,
-          ...(config.provider === "vnpay" && channel
-            ? { bank_code: channel as PaymentBody["bank_code"] }
-            : {}),
+          ...(config.provider === "vnpay" ? { bank_code: channel } : {}),
           ...(config.allow_simulate ? { simulate_result: outcome } : {}),
         };
         intent.current ??= { key: crypto.randomUUID(), body };
@@ -137,7 +141,7 @@ export default function OrderDetail({ id }: { id: string }) {
         accept(await ordersApi.one(id));
         if (result.payment_status === "failed")
           setError(
-            "Thanh toán thất bại. Bạn có thể chọn lại QR hoặc thẻ và thử lại.",
+            "Thanh toán thất bại. Bạn có thể mở VNPay để chọn phương thức khác và thử lại.",
           );
       }
     } catch (e) {
@@ -223,23 +227,8 @@ export default function OrderDetail({ id }: { id: string }) {
             {order.actions.can_change_method && (
               <>
                 {config.provider === "vnpay" ? (
-                  <label className="block">
-                    Phương thức thanh toán
-                    <select
-                      aria-label="Phương thức thanh toán"
-                      className="ml-3 rounded border p-2"
-                      value={channel}
-                      disabled={busy || uncertain}
-                      onChange={(e) => setChannel(e.target.value)}
-                    >
-                      <option value="">Chọn tại cổng VNPay</option>
-                      <option value="VNPAYQR">VNPay QR (Sandbox)</option>
-                      <option value="VNBANK">
-                        Thẻ ATM / tài khoản nội địa
-                      </option>
-                      <option value="INTCARD">Thẻ quốc tế</option>
-                    </select>
-                  </label>
+                  <VnpayChoices value={channel} onChange={setChannel}
+                    disabled={busy || (uncertain && !order.actions.can_resume_payment)} />
                 ) : (
                   <label>
                     Phương thức mô phỏng{" "}
@@ -277,7 +266,7 @@ export default function OrderDetail({ id }: { id: string }) {
             )}
             <p className="mt-3 text-sm">
               {config.provider === "vnpay"
-                ? "QR và thông tin thẻ được xử lý tại cổng VNPay Sandbox. BrewLite không thu thập số thẻ/OTP."
+                ? "Môi trường VNPay Sandbox: dùng thẻ test do VNPay cung cấp. QR cần phương tiện thử nghiệm phù hợp của VNPay."
                 : "Thanh toán mô phỏng cho đồ án; không trừ tiền thật."}
             </p>
             <button
@@ -286,9 +275,14 @@ export default function OrderDetail({ id }: { id: string }) {
               onClick={() => void action("pay")}
             >
               {order.actions.can_resume_payment
-                ? "Mở lại phiên thanh toán"
+                ? "Tiếp tục với phương thức đã chọn"
                 : "Thanh toán / thử lại"}
             </button>
+            {order.actions.can_resume_payment && config.provider === "vnpay" && (
+              <button className="mt-4 block underline" disabled={busy} onClick={() => void action("gateway")}>
+                Mở màn chọn phương thức trên VNPay
+              </button>
+            )}
           </section>
         )}
       {order.actions.can_reconcile && (

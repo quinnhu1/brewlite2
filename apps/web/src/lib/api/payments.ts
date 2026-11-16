@@ -53,4 +53,9 @@ export const paymentsApi = {
       method: "POST",
       signal,
     }),
+  openGateway: (id: string, bank_code?: PaymentBody["bank_code"]) =>
+    apiRequest<PaymentResult>(`/payments/${encodeURIComponent(id)}/gateway`, {
+      method: "POST",
+      body: JSON.stringify(bank_code ? { bank_code } : {}),
+    }),
 };

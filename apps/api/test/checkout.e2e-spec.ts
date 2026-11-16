@@ -684,6 +684,68 @@ describe('checkout with PostgreSQL', () => {
     params.vnp_SecureHash = hmac(canonical(params), 'integration-test-secret');
     return params;
   }
+  it('changes QR/card channels on the same pending reference without another charge or extended expiry', async () => {
+    process.env.PAYMENT_PROVIDER = 'vnpay';
+    const o = await create().expect(201);
+    const key = newKey();
+    const paymentBody = { order_id: o.body.order_id, method: 'vnpay', bank_code: 'VNPAYQR' };
+    const start = await request(app.getHttpServer()).post('/payments').set(auth())
+      .set('Idempotency-Key', key).send(paymentBody).expect(200);
+    const p = start.body;
+    const original = new URL(p.payment_url);
+    const endpoint = `/payments/${p.payment_id}/gateway`;
+    await request(app.getHttpServer()).post(endpoint).send({}).expect(401);
+    await request(app.getHttpServer()).post(endpoint).set(auth(tokenB)).send({}).expect(404);
+    await request(app.getHttpServer()).post(endpoint).set(auth()).send({ bank_code: 'BAD' }).expect(400);
+    for (const bank_code of ['VNBANK', 'INTCARD', undefined, 'VNPAYQR']) {
+      const res = await request(app.getHttpServer()).post(endpoint).set(auth())
+        .send(bank_code ? { bank_code } : {}).expect(200);
+      const url = new URL(res.body.payment_url);
+      expect(url.searchParams.get('vnp_BankCode')).toBe(bank_code ?? null);
+      for (const name of ['vnp_TxnRef', 'vnp_Amount', 'vnp_CreateDate', 'vnp_ExpireDate', 'vnp_ReturnUrl'])
+        expect(url.searchParams.get(name)).toBe(original.searchParams.get(name));
+      expect(url.searchParams.get('vnp_SecureHash')).toBe(
+        hmac(canonical(Object.fromEntries(url.searchParams)), 'integration-test-secret'));
+      expect(res.body.payment_id).toBe(p.payment_id);
+    }
+    expect(await db.payments.count()).toBe(1);
+    const replay = await request(app.getHttpServer()).post('/payments').set(auth())
+      .set('Idempotency-Key', key).send(paymentBody).expect(200);
+    expect(replay.body.payment_id).toBe(p.payment_id);
+    const detail = await request(app.getHttpServer()).get(`/orders/${o.body.order_id}`).set(auth()).expect(200);
+    expect(detail.body.actions.can_change_method).toBe(true);
+    expect(detail.body.actions.can_retry_payment).toBe(false);
+    await request(app.getHttpServer()).get('/payments/vnpay/ipn').query(signed(p.reference)).expect(200);
+    const paid = await request(app.getHttpServer()).post(endpoint).set(auth()).send({ bank_code: 'VNBANK' }).expect(200);
+    expect(paid.body.payment_status).toBe('success');
+    expect(paid.body.payment_url).toBeNull();
+    expect(await db.payments.count()).toBe(1);
+  });
+  it('does not reopen expired or cancelled sessions', async () => {
+    const { o, p } = await pending();
+    const endpoint = `/payments/${p.payment_id}/gateway`;
+    await request(app.getHttpServer()).post(`/orders/${o.order_id}/cancel`).set(auth()).expect(200);
+    await request(app.getHttpServer()).post(endpoint).set(auth()).send({}).expect(409);
+    await db.orders.update({ where: { order_id: o.order_id }, data: { cancellation_requested_at: null } });
+    await db.payments.update({ where: { payment_id: p.payment_id }, data: { expires_at: new Date(Date.now() - 1000) } });
+    await request(app.getHttpServer()).post(endpoint).set(auth()).send({}).expect(409);
+  });
+  it('accelerates the first query after a verified failed return without trusting return data as settlement', async () => {
+    const { p } = await pending();
+    const future = new Date(Date.now() + 60_000);
+    await db.payments.update({ where: { payment_id: p.payment_id }, data: { next_check_at: future } });
+    const q = signed(p.reference, { vnp_ResponseCode: '24', vnp_TransactionStatus: '02', vnp_TransactionNo: '0' });
+    await request(app.getHttpServer()).get('/payments/vnpay/return').query({ ...q, vnp_SecureHash: 'bad' }).expect(303);
+    expect((await db.payments.findUniqueOrThrow({ where: { payment_id: p.payment_id } })).next_check_at).toEqual(future);
+    const result = await request(app.getHttpServer()).get('/payments/vnpay/return').query(q).expect(303);
+    expect(new URL(result.headers.location).searchParams.get('gateway_code')).toBe('24');
+    const checked = await db.payments.findUniqueOrThrow({ where: { payment_id: p.payment_id } });
+    expect(checked.status).toBe('pending');
+    expect(checked.next_check_at!.getTime()).toBeLessThanOrEqual(Date.now());
+    await db.payments.update({ where: { payment_id: p.payment_id }, data: { last_checked_at: new Date(), next_check_at: future } });
+    await request(app.getHttpServer()).get('/payments/vnpay/return').query(q).expect(303);
+    expect((await db.payments.findUniqueOrThrow({ where: { payment_id: p.payment_id } })).next_check_at).toEqual(future);
+  });
   it('records a signed gateway failure without granting points, then allows a new attempt', async () => {
     const { o, p } = await pending();
     const q = signed(p.reference, {

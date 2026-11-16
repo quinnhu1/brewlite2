@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Search, ShoppingCart, UserRound, X } from "lucide-react";
@@ -8,6 +8,7 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import { authApi } from "@/lib/api/auth";
 import { SESSION_EVENT } from "@/lib/session";
 export default function Navbar() {
+  const headerRef = useRef<HTMLElement>(null);
   const path = usePathname(),
     router = useRouter();
   const ready = useHydrated();
@@ -17,6 +18,20 @@ export default function Navbar() {
   const [search, setSearch] = useState(false),
     [query, setQuery] = useState(""),
     [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => document.documentElement.style.setProperty(
+      "--site-header-height", `${header.getBoundingClientRect().height}px`,
+    );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--site-header-height");
+    };
+  }, [path]);
   useEffect(() => {
     let live = true;
     const refresh = () => {
@@ -34,7 +49,7 @@ export default function Navbar() {
   }, [path]);
   if (path.startsWith("/admin")) return null;
   return (
-    <header className="site-header">
+    <header ref={headerRef} className="site-header">
       <div className="header-inner">
         <Link href="/" className="brand">
           <strong>BrewLite</strong>

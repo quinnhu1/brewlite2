@@ -386,6 +386,60 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(payment, payment.orders);
   }
 
+  /** A verified browser return schedules QueryDR; it never settles a payment. */
+  async scheduleReturnCheck(params: vnpay.VnpParams) {
+    const payment = await this.prisma.payments.findUnique({
+      where: { gateway_ref: params.vnp_TxnRef ?? '' },
+    });
+    if (!payment || payment.provider !== 'vnpay' ||
+      (payment.merchant_code && payment.merchant_code !== params.vnp_TmnCode) ||
+      !/^\d+$/.test(params.vnp_Amount ?? '') ||
+      BigInt(params.vnp_Amount) !== BigInt(payment.amount.toFixed(0)) * 100n) return;
+    // Only the first check is accelerated. Callback replays cannot bypass QueryDR throttling.
+    await this.prisma.payments.updateMany({
+      where: { payment_id: payment.payment_id, status: 'pending', last_checked_at: null },
+      data: { next_check_at: new Date() },
+    });
+  }
+
+  /** Reopen the same transaction at the gateway's method chooser, including legacy QR links. */
+  async openGateway(userId: string, id: string, bankCode?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.payments.findFirst({
+        where: { payment_id: id, orders: { user_id: userId } },
+      });
+      if (!found) throw new NotFoundException('Không tìm thấy giao dịch.');
+      await lockOrder(tx, found.order_id);
+      const payment = await tx.payments.findUniqueOrThrow({ where: { payment_id: id } });
+      const order = await tx.orders.findUniqueOrThrow({ where: { order_id: found.order_id } });
+      if (payment.status !== 'pending') return this.toResponse(payment, order);
+      if (payment.provider !== 'vnpay' || !payment.gateway_ref ||
+        !['pending', 'payment_failed'].includes(order.status) || !order.stock_reserved ||
+        order.cancellation_requested_at || !payment.expires_at || payment.expires_at <= new Date() ||
+        !order.expires_at || order.expires_at <= new Date())
+        throw new ConflictException('Phiên không còn mở được. Hãy kiểm tra trạng thái đơn.');
+      if (payment.merchant_code !== process.env.VNPAY_TMN_CODE?.trim())
+        throw new ConflictException('Merchant đã thay đổi; cần kiểm tra giao dịch gốc.');
+      // Keep the exact reference, amount, create/expiry dates and Return URL.
+      // Do not extend the old charge or manufacture a second pending payment.
+      const original = new URL(payment.payment_url ?? '');
+      const params = Object.fromEntries(original.searchParams);
+      if (!vnpay.verify(params) || params.vnp_TxnRef !== payment.gateway_ref ||
+        params.vnp_Amount !== String(Number(payment.amount) * 100) ||
+        params.vnp_CreateDate !== payment.gateway_create_date ||
+        params.vnp_ExpireDate !== vnpay.vnpDate(payment.expires_at))
+        throw new ConflictException('Không xác thực được phiên cũ. Hãy kiểm tra với VNPay.');
+      delete params.vnp_BankCode;
+      if (bankCode) params.vnp_BankCode = bankCode;
+      const data = vnpay.canonical(params);
+      const settings = vnpay.config();
+      if (!settings) throw new ServiceUnavailableException('Cấu hình VNPay chưa hợp lệ.');
+      const paymentUrl = `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?${data}&vnp_SecureHash=${vnpay.hmac(data, settings.secret)}`;
+      await tx.payments.update({ where: { payment_id: id }, data: { payment_url: paymentUrl } });
+      return { ...this.toResponse(payment, order), payment_url: paymentUrl };
+    });
+  }
+
   async reconcile(userId: string, id: string) {
     const payment = await this.prisma.payments.findFirst({
       where: { payment_id: id, orders: { user_id: userId } },

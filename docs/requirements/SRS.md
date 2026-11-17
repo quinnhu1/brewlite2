@@ -1,32 +1,59 @@
-# SRS rút gọn — yêu cầu và tiêu chí chấp nhận
+## I. Yêu cầu chức năng (Functional Requirements)
 
-Version đề xuất: 1.3, ngày cập nhật 14/11/2026. SRS mô tả hành vi mục tiêu của bản sửa; kết quả chạy thực tế nằm trong `docs/release/TEST-RESULTS.md`. Must = bắt buộc; Should = cần làm để hoàn thiện; Could = mở rộng; Won't = ngoài bản này.
+* **FR-01 (Menu):** Hệ thống cung cấp danh sách toàn bộ thức uống hiện có thông qua API `GET /products`, bao gồm hình ảnh, tên món, mô tả và giá tiền cơ sở.
+* **FR-02 (Xem chi tiết sản phẩm):** Cho phép người dùng xem chi tiết món (`GET /products/:id`), tùy chọn quy cách thức uống (kích cỡ `S`, `M`, `L`) và các món ăn kèm (`Topping`), hệ thống tự động cộng dồn giá theo thời gian thực.
+* **FR-03 (Giỏ hàng):** Cung cấp các thao tác thêm món, cập nhật số lượng (`+/-`), loại bỏ thức uống khỏi giỏ hàng và tính toán tổng số tiền thanh toán tạm tính.
+* **FR-04 (Account - Xác thực):** Đăng ký tài khoản mới (`POST /auth/register`), xác thực đăng nhập (`POST /auth/login`) qua chuẩn JSON Web Token (JWT) và lưu phiên đăng nhập.
+* **FR-05 (Đặt đơn):** Khởi tạo đơn hàng mới từ giỏ hàng (`POST /orders`) sau khi đã xác thực tài khoản, kiểm tra tồn kho và lưu đơn ở trạng thái khởi tạo `PENDING`.
+* **FR-06 (Thanh toán):** Cho phép lựa chọn phương thức thanh toán không dùng tiền mặt (Thẻ ngân hàng hoặc Ví điện tử giả lập) qua `POST /payments`, xử lý giao dịch chống trùng lặp (`Idempotency-Key`) và cập nhật trạng thái đơn hàng.
+* **FR-07 (Theo dõi và Lịch sử đơn hàng):** Cung cấp mã định danh đơn hàng sau thanh toán, thông tin trạng thái pha chế và tra cứu lịch sử các đơn hàng cá nhân đã thực hiện (`GET /orders/me`).
+* **FR-08 (Quản lý trạng thái đơn):** Kiểm soát vòng đời đơn hàng theo máy trạng thái (`PENDING` $\rightarrow$ `PAID` $\rightarrow$ `PREPARING` $\rightarrow$ `READY` $\rightarrow$ `COMPLETED` cùng các nhánh ngoại lệ `PAYMENT_FAILED`, `CANCELLED`).
+* **FR-09 (Khuyến mãi và điểm thưởng):** Cho phép áp mã giảm giá (`Promotion`) hợp lệ khi đặt đơn và tự động cộng điểm tích lũy (`LoyaltyTransaction`) sau khi đơn hàng hoàn tất thanh toán.
+* **FR-10 (Giao hàng tận nơi):** Đặt đơn giao hàng (Delivery) và theo dõi vị trí tài xế giao nước.
 
-| ID | Ưu tiên | User story / yêu cầu | Tiêu chí chấp nhận |
-|---|---|---|---|
-| FR-01 | Must | US-01: xem menu | GET /products chỉ trả món hoạt động; có loading/empty/error; tìm kiếm/lọc nhóm trên UI |
-| FR-02 | Must | US-02: chọn size/topping | Size thuộc món; topping được phép; số lượng nguyên 1–50; món bánh chỉ size cấu hình |
-| FR-03 | Must | US-03: xác thực | Đăng ký không tự cấp admin; email unique không phân biệt hoa thường; mật khẩu hash; đổi mật khẩu cần mật khẩu hiện tại và thu hồi JWT cũ; đăng xuất mọi phiên; giới hạn thử ở DB |
-| FR-04 | Must | US-04: giỏ hàng | Thêm, xóa, đổi số lượng; giữ giỏ cùng user sau refresh; dọn giỏ/checkout khi đổi tài khoản; bỏ response phiên cũ; backend báo giá chính thức |
-| FR-05 | Must | UC-01: tạo đơn | Cấm giá/total do client tự thêm; giá DB + size + topping × quantity; promo server; lưu snapshot giá; kiểm tra tồn kho trong transaction |
-| FR-06 | Must | UC-01: thanh toán | Payment lấy amount từ Order; khóa mỗi order; một pending/success; cùng key/body chỉ có một lần xử lý |
-| FR-07 | Must | US-07: xem lịch sử/tracking | Khách chỉ đọc đơn mình; có payment_attempts, refund, lý do hủy; refresh không làm mất đơn |
-| FR-08 | Must | US-08: pha chế | Staff/admin chuyển đúng chuỗi trạng thái; chỉ PAID chưa yêu cầu hủy mới được PREPARING |
-| FR-09 | Must | US-09: đổi kênh sau thất bại | FAILED đã xác minh mở lại QR/ATM/thẻ; key mới cho lần thử mới; PENDING chưa rõ không tạo khoản thu thứ hai |
-| FR-10 | Must | UC-02: hủy/hoàn/đổi món | Chưa thu: hủy, trả tồn một lần. Đã thu: refund receipt; chỉ hoàn được xác minh mới CANCELLED; thu hồi điểm và trả tồn một lần |
-| FR-11 | Must | US-11: chống bán vượt tồn | Hai user cùng đặt 2 khi còn 2: đúng một đơn được tạo, tồn bằng 0, đơn thua không có payment |
-| FR-12 | Must | US-12: callback/đối soát | ReturnUrl chỉ điều hướng; IPN/QueryDR xác minh hash, merchant, ref, amount, loại và trạng thái trước khi ghi DB |
-| FR-13 | Should | US-13: quản trị | Admin CRUD sản phẩm với version; xem tất cả đơn và chứng từ; gọi đối soát; customer không truy cập admin |
-| FR-14 | Must | US-14: khuyến mãi/loyalty | Promo hợp lệ theo điều kiện; chỉ EARN khi paid; refund đảo EARN đúng một lần; không tự cộng điểm khi ReturnUrl báo success |
-| FR-15 | Should | US-15: tự phục hồi | Worker chạy 30s, QueryDR mỗi payment ít nhất 5 phút giữa hai claim; lưu lịch xuống DB; cảnh báo review_required |
-| FR-16 | Could | US-16: PWA offline | Không triển khai offline checkout; không được hiển thị thành công khi chưa có backend xác nhận |
-| FR-17 | Won't | Đổi món bằng bù tiền trên đơn đã thu | Dùng hủy + hoàn + đơn mới có replacement_of_order_id; không sửa amount lịch sử |
-| NFR-01 | Must | Bảo mật nghiệp vụ | Test sửa cost, access chéo user, self-admin, IPN giả, amount sai đều không tạo biến động tiền/tồn sai |
-| NFR-02 | Must | Hiệu năng | Mục tiêu API phản hồi <500ms trên dữ liệu mẫu theo đề. Benchmark 12 nhóm API, 690 mẫu, ghi p50/p95/max, mức đồng thời và mọi mẫu vượt ngưỡng. Đo lại trên VPS; ghi riêng độ trễ gateway. Không thu hẹp yêu cầu thành chỉ GET /products hoặc chỉ p95 |
-| NFR-03 | Must | Nhất quán/khả dụng | Health kiểm tra DB; restart container; khóa DB dùng được với nhiều process; worker phục hồi từ trạng thái DB |
-| NFR-04 | Must | Khả năng triển khai | Compose local đủ 3 dịch vụ; production HTTPS, DB không publish; migration riêng; image SHA; smoke và rollback |
-| NFR-05 | Must | Khả năng kiểm thử | Unit + PostgreSQL integration + ít nhất một browser E2E; CI bắt lỗi và chặn merge bằng ruleset GitHub |
-| NFR-06 | Should | Khả năng dùng | Màn mobile 390px, form có nhãn/lỗi; đang xử lý khóa nút; trạng thái chưa rõ có thông báo và thời điểm kiểm tra tiếp |
-| NFR-07 | Must | Quan sát và truy vết | Mã order/payment/refund/request, lịch sử giao dịch; release ghi SHA, migration, kết quả test; không log secret/OTP |
+## II. Yêu cầu phi chức năng (Non-Functional Requirements)
 
-Sơ đồ use-case tổng quát: `../diagrams/use-cases.puml` và `.svg`. Không đánh dấu yêu cầu đã đạt chỉ dựa trên việc có file; đối chiếu `TEST-RESULTS.md` và chứng cứ public trước khi nộp.
+* **NFR-01 (Hiệu năng):** Thời gian phản hồi của tất cả các REST API endpoints không vượt quá 500ms (mục tiêu tối ưu dưới 50ms) trong điều kiện dữ liệu kiểm thử chuẩn.
+* **NFR-02 (Bảo mật):** Mật khẩu của người dùng bắt buộc phải được băm an toàn trước khi lưu vào CSDL. Các API (tạo đơn, thanh toán, xem lịch sử) được bảo vệ bằng JWT Guard. Toàn bộ dữ liệu đầu vào phía Client gửi lên phải được lọc và kiểm tra định dạng.
+* **NFR-03 (Tính khả dụng & Khả năng tương thích):** Giao diện thiết kế theo chuẩn Mobile-first / PWA, hiển thị đầy đủ trạng thái loading/empty/error và tương thích mượt mà trên các trình duyệt hiện đại (Chrome, Safari, Edge, Firefox).
+* **NFR-04 (Khả năng triển khai):** Hệ thống có khả năng đóng gói đồng bộ toàn bộ dịch vụ (Frontend, Backend, Database) bằng Docker Compose chỉ với một lệnh thực thi duy nhất ở local, hỗ trợ endpoint và triển khai tự động qua CI/CD lên môi trường Production (HTTPS).
+* **NFR-05 (Tính toàn vẹn dữ liệu):** Hệ thống đảm bảo không xảy ra bán vượt tồn kho (over-selling) khi có nhiều khách hàng đặt đồng thời thông qua cơ chế Transaction và Optimistic Locking.
+
+## III. Mức độ ưu tiên theo MoSCoW
+
+| ID | Requirements | Priority |
+| :--- | :--- | :---: |
+| FR-01 | Hệ thống cung cấp danh sách toàn bộ thức uống hiện có, bao gồm hình ảnh, tên món, mô tả và giá tiền cơ sở. | **MUST** |
+| FR-02 | Cho phép người dùng tùy chọn quy cách thức uống (kích cỡ S, M, L) và các món ăn kèm (Topping), hệ thống tự động cộng dồn giá theo thời gian thực. | **MUST** |
+| FR-03 | Cung cấp các thao tác cập nhật số lượng, loại bỏ thức uống khỏi giỏ hàng và tính toán tổng số tiền thanh toán tạm tính. | **MUST** |
+| FR-04 | Đăng ký tài khoản mới, xác thực đăng nhập qua chuẩn JSON Web Token (JWT), lưu phiên đăng nhập. | **MUST** |
+| FR-05 | Khởi tạo đơn hàng mới từ giỏ hàng, kiểm tra tồn kho và lưu đơn ở trạng thái khởi tạo `PENDING`. | **MUST** |
+| FR-06 | Cho phép lựa chọn phương thức thanh toán không dùng tiền mặt (Thẻ ngân hàng hoặc Ví điện tử giả lập), xử lý giao dịch chống trùng lặp và cập nhật trạng thái đơn hàng. | **MUST** |
+| FR-07 | Cung cấp mã định danh đơn hàng sau thanh toán, thông tin trạng thái pha chế và tra cứu lịch sử các đơn hàng cá nhân đã thực hiện. | **MUST** |
+| FR-08 | Kiểm soát vòng đời đơn hàng theo máy trạng thái (`PENDING` > `PAID` > `PREPARING` > `READY` > `COMPLETED`, xử lý ngoại lệ `PAYMENT_FAILED`, `CANCELLED`). | **MUST** |
+| FR-09 | Cho phép áp mã giảm giá hợp lệ khi đặt đơn và tự động cộng điểm tích lũy sau khi đơn hàng hoàn tất. | **SHOULD** |
+| FR-10 | Hỗ trợ đặt đơn giao hàng tận nơi (Delivery) và theo dõi vị trí tài xế. | **WON’T** |
+| NFR-01 | Thời gian phản hồi của tất cả các REST API endpoints không vượt quá 500ms (mục tiêu dưới 50ms) trong điều kiện dữ liệu kiểm thử chuẩn. | **MUST** |
+| NFR-02 | Mật khẩu người dùng được băm an toàn, các API nghiệp vụ bảo vệ bằng JWT Guard và toàn bộ dữ liệu đầu vào được kiểm tra định dạng. | **MUST** |
+| NFR-03 | Giao diện tương thích chuẩn Mobile-first / PWA, hiển thị mượt mà trên các trình duyệt hiện đại (Chrome, Safari, Edge, Firefox). | **MUST** |
+| NFR-04 | Đóng gói đồng bộ toàn bộ dịch vụ (Frontend, Backend, Database) bằng Docker Compose, hỗ trợ và triển khai tự động qua CI/CD. | **MUST** |
+| NFR-05 | Chống bán vượt tồn kho (over-selling) khi nhiều khách hàng đặt đồng thời bằng Transaction và Optimistic Locking. | **SHOULD** |
+
+## IV. Tiêu chí chấp nhận (Acceptance Criteria)
+
+| Mã yêu cầu | Tiêu chí chấp nhận có thể kiểm chứng (Verifiable Acceptance Criteria) |
+| :--- | :--- |
+| FR-01 | – Gọi API `GET /products` trả về HTTP 200 kèm danh sách đồ uống đúng định dạng.<br>– UI hiển thị đủ ảnh, tên, giá cơ sở; có skeleton khi đang tải (loading) và thông báo khi danh sách rỗng (empty) hoặc lỗi (error). |
+| FR-02 | – Thay đổi kích cỡ (S/M/L) hoặc chọn/bỏ chọn topping cập nhật tổng giá món ngay lập tức trên UI.<br>– Công thức tính đúng: `Tổng giá món = Giá cơ sở + Phụ phí size + Tổng giá topping`. |
+| FR-03 | – Badge số lượng trên biểu tượng giỏ hàng tăng/giảm khớp với tổng số ly đã thêm.<br>– Xóa món hoặc đổi số lượng cập nhật lại tổng tiền giỏ hàng chính xác ngay lập tức. |
+| FR-04 | – Đăng ký tài khoản lưu thành công vào PostgreSQL; đăng nhập đúng trả về JWT token (200), sai mật khẩu/email trả về `401 Unauthorized`. |
+| FR-05 | – Gửi `POST /orders` khi chưa đăng nhập bị từ chối với mã 401.<br>– Gửi giỏ hàng rỗng hoặc sản phẩm hết tồn kho bị từ chối với mã 400.<br>– Tạo đơn hợp lệ trả về mã đơn và trạng thái `PENDING`. |
+| FR-06 | – Gửi `POST /payments` thành công chuyển trạng thái đơn từ `PENDING` sang `PAID`.<br>– Thanh toán lỗi chuyển đơn sang `PAYMENT_FAILED` và giữ nguyên giỏ hàng để khách thử lại.<br>– Gửi 2 request trùng `Idempotency-Key` chỉ thực thi giao dịch 1 lần duy nhất. |
+| FR-07 | – Màn hình xác nhận hiển thị rõ mã đơn hàng (VD: `#1042`) và trạng thái `PAID` ngay sau khi thanh toán.<br>– API `GET /orders/me` chỉ trả về danh sách đơn hàng thuộc về đúng người dùng đang đăng nhập. |
+| FR-08 | – Chuyển đổi đúng luồng hợp lệ (`PENDING` > `PAID` > `PREPARING` > `READY` > `COMPLETED`) thành công.<br>– Cố tình chuyển sai quy tắc (VD: `PENDING` > `COMPLETED`) bị hệ thống chặn và ném lỗi. |
+| FR-09 | – Áp dụng mã `Promotion` còn hạn và hợp lệ làm giảm đúng số tiền tương ứng; mã hết hạn/sai bị từ chối.<br>– Điểm thưởng (`loyaltyPoints`) của user tự động tăng lên sau khi đơn đạt trạng thái `PAID`. |
+| NFR-01 | – Kiểm thử hiệu năng (Postman / Supertest / k6) với tập dữ liệu mẫu cho thời gian phản hồi trung bình của các endpoint $< 500\text{ms}$ (và $< 50\text{ms}$ trên local). |
+| NFR-02 | – Dữ liệu của mật khẩu trong bảng User là chuỗi đã băm `bcrypt`, không chứa plain-text.<br>– Dữ liệu đầu vào sai kiểu/thiếu trường bắt buộc bị chặn tại tầng DTO Validation. |
+| NFR-03 | – Giao diện hiển thị cân đối, không tràn khung trên màn hình di động (375px) và máy tính (1440px) trên Chrome, Safari, Edge, Firefox. |
+| NFR-04 | – Lệnh `docker-compose up -build` khởi chạy thành công cả 3 container (web, api, db).<br>– Endpoint `GET /health` trả về `200 OK` trên môi trường Production. |
+| NFR-05 | – Integration test gửi đồng thời nhiều request đặt vượt số lượng tồn kho thực tế chỉ chấp nhận số lượng đơn hợp lệ trong giới hạn tồn kho, các request dư bị từ chối. |

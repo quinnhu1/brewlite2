@@ -46,3 +46,4 @@ bootstrap().catch((error: unknown) => {
   console.error('Failed to start BrewLite API', error);
   process.exitCode = 1;
 });
+

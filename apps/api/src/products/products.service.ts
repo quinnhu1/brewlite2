@@ -1,4 +1,3 @@
-const ciTypeCheck: number = "BREWLITE_CI_TEST_ERROR";
 import {
   BadRequestException,
   Injectable,

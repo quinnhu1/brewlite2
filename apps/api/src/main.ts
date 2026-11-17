@@ -47,4 +47,3 @@ bootstrap().catch((error: unknown) => {
   process.exitCode = 1;
 });
 
-const intentionallyUnusedVariable = 123;
